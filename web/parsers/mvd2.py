@@ -568,8 +568,6 @@ def _parse_multicast(msg: Msg, cmd: int, extra: int, frame: int,
             elif svc == SVC_LAYOUT:
                 _, pos = read_str(pos)
             elif svc == SVC_MUZZLEFLASH:
-                pos += 3
-            elif svc == SVC_MUZZLEFLASH:
                 if pos + 3 > len(d):
                     break
                 entity_num = d[pos] | (d[pos + 1] << 8); pos += 2
@@ -976,12 +974,22 @@ def _build(map_name, player_names, player_teams, frames, frame_count,
         mz = mf['mz']
         mz_map[mz] = mz_map.get(mz, 0) + 1
 
-    # Accuracy: hits / shots as a percentage
-    accuracy: dict = {
-        name: round(hit_counts.get(name, 0) / shots * 100, 1)
-        for name, shots in shots_fired.items()
-        if shots > 0
-    }
+    # Accuracy: hits / shots as a percentage.
+    # NOTE: M3 and HC (shotguns) do NOT emit "You hit" messages in T_Damage
+    # (MOD_M3/MOD_HC fall into a branch with no gi.cprintf), so hit_counts for
+    # shotgun-primary players would always be 0 — exclude them to avoid showing
+    # a misleading 0% (or meaningless value).
+    accuracy: dict = {}
+    for name, shots in shots_fired.items():
+        if not shots:
+            continue
+        mz_map    = shots_by_mz.get(name, {})
+        total_mz  = sum(mz_map.values())
+        sg_shots  = mz_map.get(MZ_SHOTGUN_WIRE, 0) + mz_map.get(MZ_HC_WIRE, 0)
+        if total_mz >= 5 and sg_shots / total_mz > 0.5:
+            continue  # shotgun primary — no reliable hit data
+        hits = hit_counts.get(name, 0)
+        accuracy[name] = min(100.0, round(hits / shots * 100, 1))
 
     # ── Damage model ─────────────────────────────────────────────────────────
     # Base damage per bullet/pellet (from p_weapon.c):

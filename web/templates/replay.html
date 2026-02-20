@@ -407,9 +407,9 @@ function buildStatsPanel(data) {
     if (n in accuracyMap) {
       accStr = accuracyMap[n].toFixed(1) + '%';
     } else if (shots > 0) {
-      accStr = (h / shots * 100).toFixed(1) + '%';
+      accStr = Math.min(100, (h / shots * 100)).toFixed(1) + '%';
     } else {
-      accStr = h > 0 ? Math.round(k / h * 100) + '%' : '\u2014';
+      accStr = h > 0 ? Math.min(100, Math.round(k / h * 100)) + '%' : '\u2014';
     }
     const kd  = d > 0 ? (k / d).toFixed(1) : (k > 0 ? '\u221e' : '\u2014');
     const aw  = awardCounts[n] || {};
