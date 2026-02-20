@@ -1,0 +1,558 @@
+{% extends "base.html" %}
+{% block title %}AQ2 Replay — {{ filename }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+  <a class="back-link" href="/" style="margin-bottom:0">← Back</a>
+  <a class="back-link" id="downloadLink" href="/download/{{ filename }}" style="margin-bottom:0;color:var(--muted)" title="Download raw demo file">⬇ Download</a>
+</div>
+<h1 style="font-size:1.3rem;margin-bottom:1rem;">{{ filename }}</h1>
+
+<div id="loadingMsg" style="color:var(--muted);margin-bottom:.8rem;">Loading replay data…</div>
+
+<div class="canvas-wrap" style="display:none" id="canvasWrap">
+  <canvas id="replayCanvas" width="800" height="600"></canvas>
+</div>
+
+<div class="replay-controls" id="replayControls" style="display:none">
+  <button id="btnPlay">▶ Play</button>
+  <input type="range" id="seekBar" min="0" value="0" step="1">
+  <span class="replay-time" id="timeLabel">0:00 / 0:00</span>
+  <button id="btnSlower">−</button>
+  <button id="btnFaster">+</button>
+  <span class="replay-time" id="speedLabel">1×</span>
+  <button id="btnWireframe" style="display:none;margin-left:auto">🗂 Wireframe</button>
+  <button id="btnTopview" style="display:none">🗺 Topview</button>
+</div>
+
+<div class="player-chips" id="playerChips"></div>
+
+<div id="replayInfo" style="margin-top:.6rem;font-size:.82rem;color:var(--muted)"></div>
+
+<!-- ── Post-load match stats + kill feed ─────────────────────── -->
+<div id="matchStatsPanel" style="display:none; margin-top:1.2rem;">
+
+  <!-- Match summary bar -->
+  <div class="card" id="matchSummary" style="margin-bottom:.8rem"></div>
+
+  <!-- Kill Feed + Player Stats side by side -->
+  <div class="two-col" style="margin-bottom:.8rem">
+    <div class="card">
+      <h2>Kill Feed</h2>
+      <div class="kill-feed" id="killFeed"></div>
+    </div>
+    <div class="card">
+      <h2>Player Stats</h2>
+      <div id="playerStats"></div>
+    </div>
+  </div>
+
+  <!-- Match Highlights -->
+  <div class="card" id="matchHighlights" style="margin-bottom:.8rem"></div>
+
+  <!-- Weapons + Locations -->
+  <div class="two-col">
+    <div class="card">
+      <h2>Weapons Used</h2>
+      <div id="weaponStats"></div>
+    </div>
+    <div class="card">
+      <h2>Kill Shots by Location</h2>
+      <div id="locStats"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const FILENAME = {{ filename|tojson }};
+const MAX_FRAMES = 0;  // 0 = all
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let replayData        = null;
+let replayGeo         = null;
+let replayTopview     = null;   // {img, params} once loaded
+let replayKillPos     = null;   // [{x,y,frame,...}] pre-computed
+let replayFrame       = 0;
+let replayTime        = 0;      // continuous playback position in seconds
+let showTopview       = true;   // toggle: topview PNG on/off
+let showWireframe     = false;   // toggle: wireframe edges on/off
+let playing      = false;
+let playSpeed    = 1;
+let animHandle   = null;
+let lastTime     = 0;
+let hiddenPlayers = new Set();
+
+fetch('/api/replay/' + encodeURIComponent(FILENAME) + (MAX_FRAMES ? '?max_frames=' + MAX_FRAMES : ''))
+  .then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d })))
+  .then(({ ok, status, data }) => {
+    if (!ok || data.error) {
+      const msg = data.error || ('HTTP ' + status);
+      document.getElementById('loadingMsg').innerHTML =
+        `<span style="color:#e85d5d">⚠ Could not load replay — ${msg}</span>`;
+      return;
+    }
+    replayData = data;
+    document.getElementById('loadingMsg').textContent =
+      `${data.map} — ${data.frame_count} frames (${fmtTime(data.duration)})`;
+    document.getElementById('canvasWrap').style.display  = '';
+    document.getElementById('replayControls').style.display = '';
+    document.getElementById('seekBar').max = Math.max(0, data.frame_count - 1);
+
+    // Player chips — colored by team
+    const chips = document.getElementById('playerChips');
+    const names = data.player_names || {};
+    const pTeams = data.player_teams || {};
+    const CHIP_TEAM_COLORS = { 1: '#e85d5d', 2: '#5b8dee' };
+    Object.entries(names).forEach(([num, name]) => {
+      const chip = document.createElement('button');
+      chip.className = 'player-chip';
+      const teamNum = pTeams[name];
+      const col = teamNum ? CHIP_TEAM_COLORS[teamNum] : playerColor(parseInt(num));
+      const dot = teamNum === 1 ? '\u25c6 ' : teamNum === 2 ? '\u25c6 ' : '';
+      chip.textContent = dot + name;
+      chip.dataset.num = num;
+      chip.style.borderColor = col;
+      chip.style.color        = col;
+      chip.addEventListener('click', () => {
+        const n = parseInt(chip.dataset.num);
+        if (hiddenPlayers.has(n)) { hiddenPlayers.delete(n); chip.classList.remove('hidden-player'); }
+        else { hiddenPlayers.add(n); chip.classList.add('hidden-player'); }
+        renderFrame(replayFrame);
+      });
+      chips.appendChild(chip);
+    });
+
+    document.getElementById('replayInfo').textContent =
+      `Map: ${data.map} | Players: ${Object.keys(names).length} | Duration: ${fmtTime(data.duration)}`;
+
+    buildStatsPanel(data);
+    replayKillPos = computeKillPositions(data);
+
+    // Load geo + topview in parallel
+    const mapName = data.map;
+    Promise.all([
+      fetch('/api/map/' + encodeURIComponent(mapName) + '/geo').then(r => r.ok ? r.json() : null),
+      fetch('/api/map/' + encodeURIComponent(mapName) + '/topview.json').then(r => r.ok ? r.json() : null),
+    ]).then(([geo, tvParams]) => {
+      replayGeo = geo;
+      if (geo) {
+        const btnW = document.getElementById('btnWireframe');
+        btnW.style.display = '';
+        btnW.classList.toggle('active', showWireframe);
+      }
+      if (tvParams) {
+        const img = new Image();
+        img.onload = () => {
+          replayTopview = { img, params: tvParams };
+          const btn = document.getElementById('btnTopview');
+          btn.style.display = '';
+          btn.classList.toggle('active', showTopview);
+          renderFrame(replayFrame);
+        };
+        img.src = '/api/map/' + encodeURIComponent(mapName) + '/topview.png';
+      }
+      renderFrame(0);
+    });
+  })
+  .catch(err => {
+    document.getElementById('loadingMsg').innerHTML =
+      `<span style="color:#e85d5d">⚠ Could not load replay — ${err.message}</span>`;
+  });
+
+// ─── Controls ──────────────────────────────────────────────────────────────
+document.getElementById('btnPlay').addEventListener('click', togglePlay);
+document.getElementById('seekBar').addEventListener('input', function() {
+  replayFrame = parseInt(this.value);
+  replayTime  = replayFrame * (replayData ? (replayData.frame_interval || 0.1) : 0.1);
+  renderFrame(replayFrame, 0);
+});
+document.getElementById('btnSlower').addEventListener('click', () => setSpeed(playSpeed / 2));
+document.getElementById('btnFaster').addEventListener('click', () => setSpeed(playSpeed * 2));
+document.getElementById('btnWireframe').addEventListener('click', function() {
+  showWireframe = !showWireframe;
+  this.classList.toggle('active', showWireframe);
+  renderFrame(replayFrame, 0);
+});
+document.getElementById('btnTopview').addEventListener('click', function() {
+  showTopview = !showTopview;
+  this.classList.toggle('active', showTopview);
+  renderFrame(replayFrame, 0);
+});
+
+function setSpeed(s) {
+  playSpeed = Math.max(0.125, Math.min(16, s));
+  document.getElementById('speedLabel').textContent =
+    (playSpeed >= 1 ? playSpeed : '1/' + Math.round(1/playSpeed)) + '×';
+}
+
+function togglePlay() {
+  playing = !playing;
+  document.getElementById('btnPlay').textContent = playing ? '⏸ Pause' : '▶ Play';
+  if (playing) { lastTime = performance.now(); requestAnimationFrame(animLoop); }
+  else if (animHandle) { cancelAnimationFrame(animHandle); animHandle = null; }
+}
+
+function animLoop(now) {
+  if (!playing) return;
+  const fi     = replayData.frame_interval || 0.1;
+  const dur    = replayData.duration       || 0;
+  const nf     = replayData.frame_count    || 1;
+  const elapsed = (now - lastTime) / 1000;  // seconds
+  lastTime = now;
+
+  replayTime += elapsed * playSpeed;
+  if (replayTime >= dur) {
+    replayTime = dur;
+    playing = false;
+    document.getElementById('btnPlay').textContent = '▶ Play';
+  }
+
+  const idx   = Math.min(Math.floor(replayTime / fi), nf - 1);
+  const alpha = (replayTime % fi) / fi;
+
+  replayFrame = idx;
+  document.getElementById('seekBar').value = idx;
+
+  renderFrame(idx, alpha);
+
+  if (playing) animHandle = requestAnimationFrame(animLoop);
+}
+
+// Build an interpolated snapshot between two data frames.
+// Lerps x/y/z and takes the shortest angular path for yaw.
+function lerpFrame(frameA, frameB, alpha) {
+  if (!frameB || alpha <= 0) return frameA;
+  const players = {};
+  for (const [num, pa] of Object.entries(frameA.players || {})) {
+    const pb = frameB.players && frameB.players[num];
+    if (!pb) { players[num] = pa; continue; }
+    let da = ((pb.a - pa.a) % 360 + 360) % 360;
+    if (da > 180) da -= 360;
+    players[num] = {
+      x: pa.x + (pb.x - pa.x) * alpha,
+      y: pa.y + (pb.y - pa.y) * alpha,
+      z: (pa.z || 0) + ((pb.z || 0) - (pa.z || 0)) * alpha,
+      a: pa.a + da * alpha,
+    };
+  }
+  return { players };
+}
+
+function renderFrame(idx, alpha) {
+  if (!replayData || !replayData.frames) return;
+  alpha = alpha || 0;
+  const canvas = document.getElementById('replayCanvas');
+  const fi     = replayData.frame_interval || 0.1;
+  const frameA = replayData.frames[idx]     || { players: {} };
+  const frameB = replayData.frames[idx + 1] || null;
+  const frame  = lerpFrame(frameA, frameB, alpha);
+  frame.t      = idx;  // used by drawKillSkulls for frame-index comparisons
+
+  const t = idx * fi + alpha * fi;
+  document.getElementById('timeLabel').textContent =
+    fmtTime(t) + ' / ' + fmtTime(replayData.duration);
+
+  drawReplay(canvas, replayGeo, frame, replayData, hiddenPlayers, showTopview ? replayTopview : null, replayKillPos, showWireframe);
+  updateKillFeed(idx);
+}
+
+// ─── Kill Feed ──────────────────────────────────────────────────────────────
+const _TEAM_COLORS = { 1: '#e85d5d', 2: '#5b8dee' };
+
+function playerTeamColor(name) {
+  const t = (replayData.player_teams || {})[name];
+  if (t) return _TEAM_COLORS[t];
+  const names = replayData.player_names || {};
+  return getPlayerColor(name, names);
+}
+
+function updateKillFeed(frameIdx) {
+  if (!replayData || !replayData.kills) return;
+  const feed  = document.getElementById('killFeed');
+  const kills = replayData.kills.filter(k => k.frame <= frameIdx);
+  feed.innerHTML = '';
+  const recent = kills.slice(-20);
+  const locColors = {head:'#e85d5d', stomach:'#e8b64d', chest:'#5b8dee',
+                     legs:'#4ecb71', unknown:'#7a7f9a'};
+  recent.forEach(k => {
+    const row  = document.createElement('div');
+    row.className = 'kill-row';
+    const t    = fmtTime(k.frame * (replayData.frame_interval || 0.1));
+    const kCol = playerTeamColor(k.killer);
+    const vCol = playerTeamColor(k.victim);
+    const lCol = locColors[k.location] || '#7a7f9a';
+    row.innerHTML =
+      `<span style="color:var(--muted);font-size:.7rem;min-width:2.8rem">${t}</span>` +
+      `<span class="kill-killer" style="color:${kCol};font-weight:600">${k.killer}</span>` +
+      `<span style="color:var(--muted);margin:0 .25rem">⚔</span>` +
+      `<span class="kill-victim" style="color:${vCol}">${k.victim}</span>` +
+      `<span class="kill-weapon" style="margin-left:auto;color:${lCol};font-size:.72rem">${k.weapon} [${k.location}]</span>`;
+    feed.appendChild(row);
+  });
+  feed.scrollTop = feed.scrollHeight;
+}
+
+// ─── Kill positions pre-computation ────────────────────────────────────────
+function computeKillPositions(data) {
+  const nameToNum = {};
+  for (const [num, name] of Object.entries(data.player_names || {})) {
+    nameToNum[name] = num;  // string key matching frame.players
+  }
+  const positions = [];
+  for (const k of (data.kills || [])) {
+    const fi = k.frame;
+    if (fi == null || fi >= data.frames.length) continue;
+    const pnum = nameToNum[k.victim];
+    if (pnum == null) continue;
+    const fr = data.frames[fi];
+    if (!fr) continue;
+    const ps = fr.players && fr.players[pnum];
+    if (!ps) continue;
+    positions.push({ x: ps.x, y: ps.y, frame: fi,
+                     victim: k.victim, killer: k.killer, weapon: k.weapon });
+  }
+  return positions;
+}
+
+// ─── Stats Panel ────────────────────────────────────────────────────────────
+function badge(label, value, col) {
+  return `<span style="display:inline-flex;align-items:center;gap:.3rem;` +
+    `background:rgba(255,255,255,.06);border-radius:.4rem;padding:.25rem .65rem;font-size:.78rem">` +
+    `${label}: <span style="color:${col};font-weight:600">${value}</span></span>`;
+}
+
+function buildStatsPanel(data) {
+  const names       = data.player_names      || {};
+  const killCounts  = data.kill_counts       || {};
+  const deathCounts = data.death_counts      || {};
+  const hitCounts   = data.hit_counts        || {};
+  const weapCounts  = data.weapon_counts     || {};
+  const killLocCnts = data.kill_loc_counts   || {};
+  const awardCounts = data.award_counts      || {};
+  const damagDealt  = data.damage_dealt      || {};
+  const hsKills     = data.headshot_kills    || {};
+  const pTeams      = data.player_teams      || {};
+  const allKills    = data.kills             || [];
+  const shotsFired  = data.shots_fired       || {};
+  const accuracyMap = data.accuracy          || {};
+  const totalKills  = allKills.length || 1;
+  const ti          = data.frame_interval    || 0.1;
+  const TC          = { 1: '#e85d5d', 2: '#5b8dee' };
+  const tCol        = n => { const t = pTeams[n]; return t ? TC[t] : 'var(--text)'; };
+
+  const rw = data.round_wins  || {};
+  const rt = data.round_ties  || 0;
+  const ts = data.team_scores || {};
+  const hasRounds = ((rw['1']||0) + (rw['2']||0)) > 0;
+
+  // ── Match Summary ────────────────────────────────────────────────────────
+  let sumHtml = `<div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;font-size:.85rem">` +
+    `<span>🗺 <b>${data.map || 'unknown'}</b></span>` +
+    `<span style="color:var(--muted)">⏱ ${fmtTime(data.duration || 0)}</span>`;
+  if (hasRounds) {
+    sumHtml += `<span style="color:var(--muted)">|</span>` +
+      `<span style="color:#e85d5d;font-weight:600">● Team 1: ${rw['1']||0} round${(rw['1']||0)!==1?'s':''} won</span>` +
+      `<span style="color:var(--muted)">vs</span>` +
+      `<span style="color:#5b8dee;font-weight:600">Team 2: ${rw['2']||0} round${(rw['2']||0)!==1?'s':''} won ●</span>`;
+    if (rt > 0)
+      sumHtml += `<span style="color:var(--muted)">(${rt} tie${rt > 1 ? 's' : ''})</span>`;
+  } else if (ts['1'] != null || ts['2'] != null) {
+    sumHtml += `<span style="color:var(--muted)">|</span>` +
+      `<span style="color:#e85d5d;font-weight:600">● Team 1: ${ts['1']||0} kills</span>` +
+      `<span style="color:var(--muted)">vs</span>` +
+      `<span style="color:#5b8dee;font-weight:600">Team 2: ${ts['2']||0} kills ●</span>`;
+  }
+  sumHtml += `</div>`;
+  document.getElementById('matchSummary').innerHTML = sumHtml;
+
+  // ── Player Stats Table ────────────────────────────────────────────────────
+  const allPnums = Object.keys(names).map(Number).sort();
+  const team1 = [], team2 = [], noTeam = [], spectators = [];
+
+  // Spectator = no kills, deaths, hits, damage, or shots fired — never participated.
+  const isSpectator = n =>
+    !killCounts[n] && !deathCounts[n] && !hitCounts[n] && !damagDealt[n] && !shotsFired[n];
+
+  allPnums.forEach(num => {
+    const n = names[num];
+    if (isSpectator(n)) { spectators.push({num, name: n}); return; }
+    const t = pTeams[n];
+    if      (t === 1) team1.push({num, name: n});
+    else if (t === 2) team2.push({num, name: n});
+    else               noTeam.push({num, name: n});
+  });
+  const byKills = (a, b) => (killCounts[b.name]||0) - (killCounts[a.name]||0);
+  [team1, team2, noTeam].forEach(g => g.sort(byKills));
+
+  const th = (t, title) =>
+    `<th title="${title}" style="text-align:center;padding:.25rem .4rem;` +
+    `color:var(--muted);font-size:.7rem;text-transform:uppercase;font-weight:600">${t}</th>`;
+  const td = v =>
+    `<td style="text-align:center;padding:.25rem .4rem;font-variant-numeric:tabular-nums">${v}</td>`;
+
+  function pRow(p, even) {
+    const n   = p.name;
+    const col = pTeams[n] ? TC[pTeams[n]] : playerColor(p.num);
+    const k   = killCounts[n]  || 0;
+    const d   = deathCounts[n] || 0;
+    const h   = hitCounts[n]   || 0;
+    const dmg = damagDealt[n]  || 0;
+    // Accuracy: use server-side muzzle-flash count when available, else kill efficiency
+    const shots = shotsFired[n] || 0;
+    let accStr;
+    if (n in accuracyMap) {
+      accStr = accuracyMap[n].toFixed(1) + '%';
+    } else if (shots > 0) {
+      accStr = (h / shots * 100).toFixed(1) + '%';
+    } else {
+      accStr = h > 0 ? Math.round(k / h * 100) + '%' : '\u2014';
+    }
+    const kd  = d > 0 ? (k / d).toFixed(1) : (k > 0 ? '\u221e' : '\u2014');
+    const aw  = awardCounts[n] || {};
+    const awStr = [
+      aw.Impressive ? `<span title="Impressive">⚡${aw.Impressive}</span>` : '',
+      aw.Accuracy   ? `<span title="Accuracy">🎯${aw.Accuracy}</span>`   : '',
+      aw.Excellent  ? `<span title="Excellent">💎${aw.Excellent}</span>`  : '',
+    ].filter(Boolean).join('\u202f') || '<span style="color:var(--muted)">—</span>';
+    return `<tr style="background:${even ? 'rgba(255,255,255,.03)' : 'transparent'}">` +
+      `<td style="text-align:left;padding:.25rem .4rem;color:${col};font-weight:600">${n}</td>` +
+      td(k) + td(d) + td(kd) + td(h) + td(accStr) +
+      td(dmg > 0 ? dmg.toLocaleString() : '—') +
+      `<td style="text-align:center;padding:.25rem .4rem;font-size:.78rem">${awStr}</td>` +
+      `</tr>`;
+  }
+
+  function teamHeader(col, label, score) {
+    return `<tr>` +
+      `<td colspan="8" style="color:${col};font-weight:700;padding:.5rem .4rem .2rem;` +
+      `border-top:1px solid rgba(255,255,255,.1);font-size:.83rem">` +
+      `● ${label} — ${score}</td></tr>`;
+  }
+
+  let ptHtml = `<table style="width:100%;border-collapse:collapse;font-size:.82rem">` +
+    `<thead><tr>` +
+    `<th style="text-align:left;padding:.25rem .4rem;color:var(--muted);font-size:.7rem;text-transform:uppercase;font-weight:600">Player</th>` +
+    th('K',   'Kills') +
+    th('D',   'Deaths') +
+    th('K/D', 'Kill / Death ratio') +
+    th('Hits','Hits landed') +
+    th('Acc', 'Shot accuracy \u2014 hits per shots fired (from muzzle-flash data)') +
+    th('Dmg', 'Estimated damage dealt') +
+    th('Awards', 'Match awards') +
+    `</tr></thead><tbody>`;
+
+  if (team1.length || team2.length) {
+    const r1 = hasRounds ? `${rw['1']||0} round${(rw['1']||0)!==1?'s':''} won` : `${ts['1']||0} kills`;
+    const r2 = hasRounds ? `${rw['2']||0} round${(rw['2']||0)!==1?'s':''} won` : `${ts['2']||0} kills`;
+    ptHtml += teamHeader('#e85d5d', 'Team 1', r1);
+    team1.forEach((p, i) => ptHtml += pRow(p, i % 2 === 0));
+    ptHtml += teamHeader('#5b8dee', 'Team 2', r2);
+    team2.forEach((p, i) => ptHtml += pRow(p, i % 2 === 0));
+  } else {
+    noTeam.forEach((p, i) => ptHtml += pRow(p, i % 2 === 0));
+  }
+  ptHtml += `</tbody></table>`;
+
+  if (spectators.length) {
+    const specNames = spectators.map(p => `<span style="color:var(--muted)">${p.name}</span>`).join(', ');
+    ptHtml += `<div style="font-size:.78rem;color:var(--muted);margin-top:.5rem;padding:.25rem .2rem">` +
+      `👁 Spectators: ${specNames}</div>`;
+  }
+
+  document.getElementById('playerStats').innerHTML = ptHtml;
+
+  // ── Match Highlights ──────────────────────────────────────────────────────
+  const allP = [...team1, ...team2, ...noTeam];  // excludes spectators
+
+  // First blood
+  const firstKill = allKills[0];
+
+  // Best streak (consecutive kills without dying)
+  let bestStreak = 0, bestStreakP = '';
+  allP.forEach(p => {
+    const n = p.name; let streak = 0, max = 0;
+    allKills.forEach(k => {
+      if (k.killer === n) { if (++streak > max) max = streak; }
+      else if (k.victim === n) streak = 0;
+    });
+    if (max > bestStreak) { bestStreak = max; bestStreakP = n; }
+  });
+
+  // Headshot king
+  let mostHS = 0, hsKing = '';
+  Object.entries(hsKills).forEach(([n, c]) => { if (c > mostHS) { mostHS = c; hsKing = n; } });
+
+  // Top damage dealer
+  let topDmg = 0, dmgKing = '';
+  Object.entries(damagDealt).forEach(([n, v]) => { if (v > topDmg) { topDmg = v; dmgKing = n; } });
+
+  // Most deaths
+  let mostD = 0, punchbag = '';
+  allP.forEach(p => { const d = deathCounts[p.name]||0; if (d > mostD) { mostD = d; punchbag = p.name; } });
+
+  let hlHtml = `<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">` +
+    `<span style="color:var(--muted);font-size:.72rem;text-transform:uppercase;` +
+    `letter-spacing:.05em;margin-right:.3rem">Highlights</span>`;
+  if (firstKill)
+    hlHtml += badge('🩸 First Blood', `${firstKill.killer} @ ${fmtTime(firstKill.frame * ti)}`, tCol(firstKill.killer));
+  if (bestStreak >= 3)
+    hlHtml += badge('🔥 Best Streak', `${bestStreakP} ×${bestStreak}`, tCol(bestStreakP));
+  if (mostHS >= 2)
+    hlHtml += badge('💀 Headshot King', `${hsKing} (${mostHS} hs)`, tCol(hsKing));
+  if (dmgKing && topDmg > 0)
+    hlHtml += badge('💥 Top Damage', `${dmgKing} (${topDmg.toLocaleString()})`, tCol(dmgKing));
+  if (punchbag && mostD >= 3)
+    hlHtml += badge('☠ Punching Bag', `${punchbag} (${mostD}×)`, tCol(punchbag));
+  hlHtml += `</div>`;
+  document.getElementById('matchHighlights').innerHTML = hlHtml;
+
+  // ── Weapons ───────────────────────────────────────────────────────────────
+  let weapHtml = '';
+  Object.entries(weapCounts).sort((a, b) => b[1] - a[1]).forEach(([w, c]) => {
+    const pct = Math.round(c / totalKills * 100);
+    weapHtml += `<div class="acc-bar" style="margin:.3rem 0">` +
+      `<span style="min-width:3.5rem;font-size:.78rem">${w}</span>` +
+      `<div class="bar-outer"><div class="bar-inner" style="width:${pct}%"></div></div>` +
+      `<span style="min-width:2rem;text-align:right;font-size:.78rem">${c}</span></div>`;
+  });
+  document.getElementById('weaponStats').innerHTML = weapHtml;
+
+  // ── Kill Locations ────────────────────────────────────────────────────────
+  const locColors = {head:'#e85d5d', stomach:'#e8b64d', chest:'#5b8dee', legs:'#4ecb71', unknown:'#7a7f9a'};
+  let locHtml = '';
+  Object.entries(killLocCnts).sort((a, b) => b[1] - a[1]).forEach(([l, c]) => {
+    const pct = Math.round(c / totalKills * 100);
+    const col = locColors[l] || '#7a7f9a';
+    locHtml += `<div class="acc-bar" style="margin:.3rem 0">` +
+      `<span style="min-width:3.5rem;font-size:.78rem;color:${col}">${l}</span>` +
+      `<div class="bar-outer"><div class="bar-inner" style="width:${pct}%;background:${col}"></div></div>` +
+      `<span style="min-width:2rem;text-align:right;font-size:.78rem">${c}</span></div>`;
+  });
+  document.getElementById('locStats').innerHTML = locHtml;
+
+  document.getElementById('matchStatsPanel').style.display = '';
+}
+
+function getPlayerColor(name, playerNames) {
+  for (const [num, n] of Object.entries(playerNames)) {
+    if (n === name) return playerColor(parseInt(num));
+  }
+  return 'var(--text)';
+}
+
+function fmtTime(secs) {
+  const m = Math.floor(secs / 60), s = Math.floor(secs % 60);
+  return m + ':' + String(s).padStart(2,'0');
+}
+
+function playerColor(num) {
+  // Simple deterministic palette  
+  const colors = ['#5b8dee','#e85d5d','#4ecb71','#e8b64d','#c45be8','#5de8d1','#e88c5b','#8de85b'];
+  return colors[num % colors.length];
+}
+</script>
+{% endblock %}
