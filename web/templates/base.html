@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}AQ2 Stats{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<nav class="navbar">
+  <a class="brand" href="/">AQ2 Stats</a>
+  <ul>
+    <li><a href="/">Matches</a></li>
+  </ul>
+</nav>
+<main class="container">
+{% block content %}{% endblock %}
+</main>
+<script src="{{ url_for('static', filename='js/viewer.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

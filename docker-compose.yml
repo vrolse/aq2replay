@@ -1,0 +1,23 @@
+services:
+  aq2replay:
+    build: .
+    container_name: aq2replay
+    ports:
+      - '5000:5000'
+    environment:
+      # Set to "false" (any non-"true" value) in production
+      - FLASK_DEBUG=false
+    volumes:
+      # Demo files — add new .mvd2 files here without rebuilding
+      - ./mvd2:/app/mvd2
+      # Map and texture assets
+      - aqtion_maps:/app/bsp
+      - ./textures:/app/textures
+      - ./colormap.pcx:/app/colormap.pcx:ro
+      # Topview PNG cache — persisted between container restarts
+      - ./cache:/app/cache
+    restart: unless-stopped
+
+volumes:
+  aqtion_maps:
+    external: true

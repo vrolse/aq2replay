@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}AQ2 Stats — Replays{% endblock %}
+
+{% block content %}
+<h1 style="font-size:1.5rem;margin-bottom:1rem;">Replays</h1>
+
+<div style="display:grid;grid-template-columns:220px 1fr;gap:1rem;align-items:start">
+
+  <!-- ── Folder tree ───────────────────────────────────────────── -->
+  <div id="folderTree" style="background:var(--surface);border:1px solid var(--border);
+       border-radius:var(--radius);padding:.4rem;max-height:80vh;overflow-y:auto">
+    <div style="font-size:.75rem;color:var(--muted);padding:.25rem .5rem .4rem;
+         font-weight:600;text-transform:uppercase;letter-spacing:.06em">Folders</div>
+    <div id="folderList"><div style="color:var(--muted);font-size:.85rem;padding:.4rem .5rem">Loading…</div></div>
+  </div>
+
+  <!-- ── File list ─────────────────────────────────────────────── -->
+  <div>
+    <!-- Breadcrumb -->
+    <div id="breadcrumb" style="display:flex;align-items:center;flex-wrap:wrap;gap:.15rem;
+         margin-bottom:.6rem;font-size:.85rem;min-height:1.4rem"></div>
+
+    <div style="display:flex;gap:.5rem;margin-bottom:.7rem;align-items:center">
+      <input id="searchInput" type="text" placeholder="Search replays…"
+        style="flex:1;padding:.45rem .75rem;background:var(--surface);border:1px solid var(--border);
+               border-radius:var(--radius);color:var(--text);font-size:.9rem;outline:none;
+               transition:border-color .15s"
+        oninput="onSearch(this.value)"
+        onfocus="this.style.borderColor='var(--accent)'"
+        onblur="this.style.borderColor='var(--border)'">
+      <span id="countLabel" style="color:var(--muted);font-size:.85rem;white-space:nowrap"></span>
+    </div>
+    <div id="matchList" class="match-list"></div>
+    <div id="pagination" style="display:flex;gap:.4rem;margin-top:.8rem;flex-wrap:wrap"></div>
+  </div>
+</div>
+
+<script>
+/* ── state ──────────────────────────────────────────────────────── */
+let currentDir  = null;
+let currentQ    = '';
+let currentPage = 1;
+let searchTimer = null;
+let _tree       = {};        // nested tree built from flat dir list
+let _expanded   = new Set(); // which dir paths are open
+
+/* ── build tree from flat dir list ─────────────────────────────── */
+function buildTree(dirs) {
+  const root = {};
+  dirs.forEach(path => {
+    const parts = path.split('/');
+    let node = root;
+    parts.forEach(part => {
+      if (!node[part]) node[part] = {};
+      node = node[part];
+    });
+  });
+  return root;
+}
+
+/* ── render tree ────────────────────────────────────────────────── */
+function renderTree(node, parentPath, container) {
+  Object.keys(node).sort().forEach(name => {
+    const path     = parentPath ? parentPath + '/' + name : name;
+    const children = node[name];
+    const hasKids  = Object.keys(children).length > 0;
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;border-radius:4px;';
+    row.dataset.dir   = path;
+
+    // Toggle arrow (only if has children)
+    const arrow = document.createElement('span');
+    arrow.style.cssText =
+      'width:1.2rem;text-align:center;cursor:pointer;flex-shrink:0;font-size:.7rem;color:var(--muted)';
+    arrow.textContent = hasKids ? (_expanded.has(path) ? '▼' : '▶') : '';
+    if (hasKids) {
+      arrow.addEventListener('click', e => {
+        e.stopPropagation();
+        if (_expanded.has(path)) _expanded.delete(path); else _expanded.add(path);
+        refreshTree();
+      });
+    }
+
+    // Label
+    const label = document.createElement('span');
+    label.textContent = '📁 ' + name;
+    label.title       = path;
+    label.style.cssText =
+      'flex:1;padding:.28rem .4rem .28rem .1rem;cursor:pointer;font-size:.84rem;' +
+      'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
+      (currentDir === path ? 'color:#fff' : 'color:var(--text)');
+    label.addEventListener('click', () => selectFolder(path));
+
+    row.style.background = currentDir === path ? 'var(--accent)' : '';
+
+    row.addEventListener('mouseenter', () => {
+      if (currentDir !== path) row.style.background = 'rgba(255,255,255,.05)';
+    });
+    row.addEventListener('mouseleave', () => {
+      if (currentDir !== path) row.style.background = '';
+    });
+
+    row.appendChild(arrow);
+    row.appendChild(label);
+    container.appendChild(row);
+
+    // Recurse into children if expanded
+    if (hasKids && _expanded.has(path)) {
+      const sub = document.createElement('div');
+      sub.style.paddingLeft = '.9rem';
+      renderTree(children, path, sub);
+      container.appendChild(sub);
+    }
+  });
+}
+
+async function loadDirs() {
+  const res  = await fetch('/api/dirs');
+  const dirs = await res.json();
+  _tree = buildTree(dirs);
+  refreshTree();
+  selectFolder(null);
+}
+
+function refreshTree() {
+  const container = document.getElementById('folderList');
+  container.innerHTML = '';
+
+  // "All" row
+  const allRow = document.createElement('div');
+  allRow.style.cssText =
+    'display:flex;align-items:center;border-radius:4px;cursor:pointer;' +
+    'padding:.28rem .5rem;font-size:.84rem;' +
+    (currentDir === null ? 'background:var(--accent);color:#fff' : 'color:var(--text)');
+  allRow.textContent = '🗂 All replays';
+  allRow.addEventListener('click', () => selectFolder(null));
+  allRow.addEventListener('mouseenter', () => {
+    if (currentDir !== null) allRow.style.background = 'rgba(255,255,255,.05)';
+  });
+  allRow.addEventListener('mouseleave', () => {
+    if (currentDir !== null) allRow.style.background = currentDir === null ? 'var(--accent)' : '';
+  });
+  container.appendChild(allRow);
+
+  renderTree(_tree, '', container);
+}
+
+/* ── breadcrumb ─────────────────────────────────────────────────── */
+function renderBreadcrumb() {
+  const bc = document.getElementById('breadcrumb');
+  bc.innerHTML = '';
+
+  const sep = () => {
+    const s = document.createElement('span');
+    s.textContent = '/';
+    s.style.color = 'var(--muted)';
+    return s;
+  };
+
+  const crumb = (label, dir) => {
+    const s = document.createElement('span');
+    s.textContent = label;
+    s.style.cssText = dir !== '§current§'
+      ? 'color:var(--accent);cursor:pointer'
+      : 'color:var(--text)';
+    if (dir !== '§current§') s.addEventListener('click', () => selectFolder(dir));
+    return s;
+  };
+
+  bc.appendChild(crumb('All', null));
+
+  if (currentDir) {
+    const parts = currentDir.split('/');
+    parts.forEach((part, i) => {
+      bc.appendChild(sep());
+      const fullPath = parts.slice(0, i + 1).join('/');
+      const isCurrent = i === parts.length - 1;
+      bc.appendChild(crumb(part, isCurrent ? '§current§' : fullPath));
+    });
+  }
+}
+
+/* ── select folder ──────────────────────────────────────────────── */
+function selectFolder(dir) {
+  currentDir  = dir;
+  currentPage = 1;
+  // Auto-expand ancestors
+  if (dir) {
+    const parts = dir.split('/');
+    for (let i = 1; i <= parts.length; i++) _expanded.add(parts.slice(0, i).join('/'));
+  }
+  refreshTree();
+  renderBreadcrumb();
+  loadReplays();
+}
+
+/* ── replay list ────────────────────────────────────────────────── */
+async function loadReplays() {
+  const params = new URLSearchParams({ page: currentPage, per_page: 100 });
+  if (currentDir) params.set('dir', currentDir);
+  if (currentQ)   params.set('q',   currentQ);
+
+  document.getElementById('matchList').innerHTML =
+    '<div style="color:var(--muted);padding:.5rem .2rem;font-size:.9rem">Loading…</div>';
+
+  const res  = await fetch('/api/replays?' + params);
+  const data = await res.json();
+
+  const label = document.getElementById('countLabel');
+  label.textContent = data.total === 0  ? 'No replays'
+                    : data.total === 1  ? '1 replay'
+                    : data.total.toLocaleString() + ' replays';
+
+  const list = document.getElementById('matchList');
+  list.innerHTML = '';
+
+  if (!data.items.length) {
+    list.innerHTML = '<p style="color:var(--muted)">No replays match.</p>';
+  } else {
+    data.items.forEach(r => {
+      const parts    = r.filename.split('/');
+      const basename = parts[parts.length - 1];
+      const subdir   = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+      const sizeMB   = (r.size / 1024 / 1024).toFixed(1);
+
+      const a = document.createElement('a');
+      a.className = 'match-item';
+      a.href      = '/replay/' + r.filename;
+      a.style.cssText = 'text-decoration:none;color:inherit';
+      a.innerHTML =
+        `<div style="grid-column:1/3">` +
+          `<div class="match-map">` +
+            (subdir ? `<span style="color:var(--muted);font-size:.78rem;margin-right:.35rem">📁 ${subdir}/</span>` : '') +
+            basename +
+          `</div>` +
+          `<div class="match-meta">${sizeMB} MB</div>` +
+        `</div>` +
+        `<div class="match-score" style="font-size:.9rem;color:var(--muted)">▶</div>`;
+      list.appendChild(a);
+    });
+  }
+
+  renderPagination(data.page, data.pages);
+}
+
+/* ── pagination ─────────────────────────────────────────────────── */
+function renderPagination(page, pages) {
+  const el = document.getElementById('pagination');
+  el.innerHTML = '';
+  if (pages <= 1) return;
+
+  const mkBtn = (label, p, disabled) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.disabled    = disabled;
+    b.style.cssText =
+      `padding:.3rem .7rem;background:${p === page ? 'var(--accent)' : 'var(--surface)'};` +
+      `border:1px solid var(--border);border-radius:4px;color:var(--text);` +
+      `cursor:${disabled ? 'default' : 'pointer'};font-size:.85rem`;
+    if (!disabled) b.addEventListener('click', () => {
+      currentPage = p; loadReplays(); window.scrollTo(0, 0);
+    });
+    return b;
+  };
+
+  if (page > 1) el.appendChild(mkBtn('‹ Prev', page - 1, false));
+  const start = Math.max(1, page - 2);
+  const end   = Math.min(pages, start + 4);
+  for (let i = start; i <= end; i++) el.appendChild(mkBtn(i, i, i === page));
+  if (page < pages) el.appendChild(mkBtn('Next ›', page + 1, false));
+}
+
+/* ── search ─────────────────────────────────────────────────────── */
+function onSearch(q) {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    currentQ    = q.trim().toLowerCase();
+    currentPage = 1;
+    loadReplays();
+  }, 300);
+}
+
+/* ── boot ───────────────────────────────────────────────────────── */
+loadDirs();
+</script>
+{% endblock %}
