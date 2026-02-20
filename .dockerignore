@@ -1,0 +1,24 @@
+venv/
+__pycache__/
+web/__pycache__/
+web/parsers/__pycache__/
+*.pyc
+*.pyo
+
+# Generated cache — re-created at runtime
+cache/
+
+# Demo and map data — bind-mounted, not baked into the image
+mvd2/
+bsp/
+textures/
+colormap.pcx
+
+# Dev / editor noise
+.git/
+*.md
+*.stats
+stat-collection-main/
+mvdtool-master/
+q2pro-aqtion/
+aq2-tng-aqtion/
