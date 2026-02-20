@@ -878,6 +878,9 @@ def _build(map_name, player_names, player_teams, frames, frame_count,
     else:
         round_starts = _cluster_rounds(round_start_frames)
 
+    # Strip the demo-recorder pseudo-client — it is never a real player.
+    player_names = {k: v for k, v in player_names.items() if v != '[MVDSPEC]'}
+
     # Ghost client detection: client nums that appear in frames but have no skin configstring
     all_frame_nums: set = set()
     for fr in frames:
