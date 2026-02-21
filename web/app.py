@@ -1,11 +1,3 @@
-r"""
-AQ2 Stats web application.
-
-Run (with venv active):
-  python web/app.py
-or
-  cmd /c "E:\aq2stats\venv\Scripts\activate.bat && python web/app.py"
-"""
 import os
 import re
 import time
@@ -291,3 +283,4 @@ def api_map_topview_json(mapname: str):
 if __name__ == '__main__':
     debug = os.environ.get('FLASK_DEBUG', 'true').lower() == 'true'
     app.run(debug=debug, host='0.0.0.0', port=5000)
+
