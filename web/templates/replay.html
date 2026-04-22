@@ -2,9 +2,24 @@
 {% block title %}AQ2 Replay — {{ filename }}{% endblock %}
 
 {% block content %}
+<style>
+  .rp-stats-table { width:100%; font-size:.82rem; border-collapse:collapse; }
+  .rp-stats-table th, .rp-stats-table td { padding:.32rem .5rem; text-align:right; }
+  .rp-stats-table th { color:var(--muted); font-weight:600; }
+  .rp-stats-table th.name, .rp-stats-table td.name { text-align:left; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rp-stats-table tr.team-1 td.name { color:#e85d5d; }
+  .rp-stats-table tr.team-2 td.name { color:#5b8dee; }
+  .rp-stats-table tr.team-hdr td { padding:.45rem .5rem .25rem; font-weight:700; font-size:.83rem; border-top:1px solid rgba(255,255,255,.08); }
+  .rp-stats-table tr.team-hdr.t1 td { color:#e85d5d; }
+  .rp-stats-table tr.team-hdr.t2 td { color:#5b8dee; }
+  .rp-stats-table tr.team-hdr td .score { color:var(--muted); font-weight:500; margin-left:.4rem; font-size:.78rem; }
+  .rp-stats-table td.wpn { text-align:center; width:34px; padding-right:.2rem; }
+  .rp-stats-table td.wpn img { height:18px; width:auto; max-width:30px; image-rendering:pixelated; vertical-align:middle; opacity:.95; }
+</style>
 <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
   <a class="back-link" href="/" style="margin-bottom:0">← Back</a>
   <a class="back-link" id="downloadLink" href="/download/{{ filename }}" style="margin-bottom:0;color:var(--muted)" title="Download raw demo file">⬇ Download</a>
+  <a class="back-link" href="/view3d/{{ filename }}" style="margin-bottom:0;color:#7ecb8f" title="Open 3D viewer">🎮 3D View</a>
 </div>
 <h1 style="font-size:1.3rem;margin-bottom:1rem;">{{ filename }}</h1>
 
@@ -29,20 +44,23 @@
 
 <div id="replayInfo" style="margin-top:.6rem;font-size:.82rem;color:var(--muted)"></div>
 
+<div id="rpHltvPanel" style="display:none;margin-top:.7rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:.5rem .7rem;overflow-x:auto;"></div>
+
 <!-- ── Post-load match stats + kill feed ─────────────────────── -->
 <div id="matchStatsPanel" style="display:none; margin-top:1.2rem;">
 
   <!-- Match summary bar -->
   <div class="card" id="matchSummary" style="margin-bottom:.8rem"></div>
+  <div class="card" id="aiSummary" style="margin-bottom:.8rem"></div>
 
   <!-- Kill Feed + Player Stats side by side -->
   <div class="two-col" style="margin-bottom:.8rem">
     <div class="card">
-      <h2>Kill Feed</h2>
+      <h2><span class="help-label" title="Latest kill and round events up to the current playback time.">Kill Feed</span></h2>
       <div class="kill-feed" id="killFeed"></div>
     </div>
     <div class="card">
-      <h2>Player Stats</h2>
+      <h2><span class="help-label" title="Per-player match totals including kills, deaths, accuracy, damage, awards, and captain markers.">Player Stats</span></h2>
       <div id="playerStats"></div>
     </div>
   </div>
@@ -53,13 +71,46 @@
   <!-- Weapons + Locations -->
   <div class="two-col">
     <div class="card">
-      <h2>Weapons Used</h2>
+      <h2><span class="help-label" title="Kill distribution by weapon in this replay.">Weapons Used</span></h2>
       <div id="weaponStats"></div>
     </div>
     <div class="card">
-      <h2>Kill Shots by Location</h2>
+      <h2><span class="help-label" title="Where killing shots landed: head, chest, stomach, legs, or armor zones.">Kill Shots by Location</span></h2>
       <div id="locStats"></div>
     </div>
+  </div>
+
+  <!-- Full Kill Log + Chat Log (collapsible, side-by-side) -->
+  <div class="two-col" style="margin-top:1rem;align-items:start;">
+    <details id="fullKillLogDetails">
+      <summary style="cursor:pointer;font-size:.9rem;font-weight:600;color:var(--muted);
+                      padding:.4rem 0;user-select:none;">Full Kill Log (<span id="killLogCount">0</span> kills)</summary>
+      <div class="card" style="padding:0;overflow-x:auto;margin-top:.5rem;">
+        <table id="killLogTable" style="font-size:.8rem;">
+          <thead>
+            <tr>
+              <th class="help-label" title="Replay timestamp of the kill event." style="width:3.5rem;">Time</th>
+              <th class="help-label" title="Player who got the kill.">Killer</th>
+              <th class="help-label" title="Kill type icon: sword for normal kill, handshake for team kill." style="width:2rem;text-align:center;">⚔</th>
+              <th class="help-label" title="Player who died in this event.">Victim</th>
+              <th class="num help-label" title="Weapon used for the kill.">Weapon</th>
+              <th class="num help-label" title="Body location of the killing shot.">Location</th>
+            </tr>
+          </thead>
+          <tbody id="killLogBody">
+            <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1rem;">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details id="chatLogDetails">
+      <summary style="cursor:pointer;font-size:.9rem;font-weight:600;color:var(--muted);
+                      padding:.4rem 0;user-select:none;">Chat + Round Log (<span id="chatLogCount">0</span> events)</summary>
+      <div class="card" style="padding:.4rem .75rem;overflow-x:auto;margin-top:.5rem;">
+        <div id="chatLogBody" style="font-size:.82rem;"></div>
+      </div>
+    </details>
   </div>
 
 </div>
@@ -86,6 +137,43 @@ let animHandle   = null;
 let lastTime     = 0;
 let hiddenPlayers = new Set();
 
+function loadReplayInsights(filename) {
+  const panel = document.getElementById('aiSummary');
+  if (!panel) return;
+  panel.innerHTML = '<span style="color:var(--muted);font-size:.82rem;">Loading AI summary...</span>';
+
+  const base = '/api/replay/' + encodeURIComponent(filename);
+  Promise.all([
+    fetch(base + '/insights').then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(base + '/highlights?limit=12').then(r => r.ok ? r.json() : null).catch(() => null),
+  ]).then(([insights, highlights]) => {
+    if (!insights || !insights.summary) {
+      panel.innerHTML = '<span style="color:var(--muted);font-size:.82rem;">AI summary unavailable for this replay.</span>';
+      return;
+    }
+
+    const keyPoints = insights.key_points || [];
+    const hl = (highlights && highlights.highlights) ? highlights.highlights : [];
+    const hlPreview = hl.slice(0, 6).map(h => {
+      const t = fmtTime(Number(h.time_seconds || 0));
+      return `<span style="display:inline-flex;align-items:center;gap:.3rem;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:.45rem;padding:.2rem .55rem;font-size:.74rem;">` +
+        `<strong style="color:var(--accent)">${t}</strong>${escHtml(h.label || '')}</span>`;
+    }).join('');
+
+    panel.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:.55rem;">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);">AI Match Summary</div>
+        <div style="font-size:.96rem;font-weight:700;color:var(--text);">${escHtml(insights.headline || 'Match summary')}</div>
+        <div style="font-size:.84rem;color:var(--muted);line-height:1.4;">${escHtml(insights.summary || '')}</div>
+        ${keyPoints.length ? `<ul style="margin:.1rem 0 0 1rem;padding:0;color:var(--muted);font-size:.8rem;line-height:1.35;">${keyPoints.map(k => `<li>${escHtml(k)}</li>`).join('')}</ul>` : ''}
+        ${hlPreview ? `<div style="display:flex;flex-wrap:wrap;gap:.4rem;">${hlPreview}</div>` : ''}
+      </div>
+    `;
+  }).catch(() => {
+    panel.innerHTML = '<span style="color:var(--accent2);font-size:.82rem;">Failed to load AI summary.</span>';
+  });
+}
+
 fetch('/api/replay/' + encodeURIComponent(FILENAME) + (MAX_FRAMES ? '?max_frames=' + MAX_FRAMES : ''))
   .then(r => r.json().then(d => ({ ok: r.ok, status: r.status, data: d })))
   .then(({ ok, status, data }) => {
@@ -96,9 +184,11 @@ fetch('/api/replay/' + encodeURIComponent(FILENAME) + (MAX_FRAMES ? '?max_frames
       return;
     }
     replayData = data;
+    _rpLastIdx = -1;  // reset HLTV panel count cache
     document.getElementById('loadingMsg').textContent =
       `${data.map} — ${data.frame_count} frames (${fmtTime(data.duration)})`;
-    document.getElementById('canvasWrap').style.display  = '';
+    document.getElementById('canvasWrap').style.display = '';
+    document.getElementById('rpHltvPanel').style.display = 'block';
     document.getElementById('replayControls').style.display = '';
     document.getElementById('seekBar').max = Math.max(0, data.frame_count - 1);
 
@@ -107,18 +197,29 @@ fetch('/api/replay/' + encodeURIComponent(FILENAME) + (MAX_FRAMES ? '?max_frames
     const names = data.player_names || {};
     const pTeams = data.player_teams || {};
     const CHIP_TEAM_COLORS = { 1: '#e85d5d', 2: '#5b8dee' };
-    Object.entries(names).forEach(([num, name]) => {
+    const nameCounts = {};
+    Object.values(names).forEach(name => {
+      nameCounts[name] = (nameCounts[name] || 0) + 1;
+    });
+    const slotLabel = (num, name) => {
+      if ((nameCounts[name] || 0) <= 1) return name;
+      return `${name} #${num}`;
+    };
+
+    Object.entries(names)
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .forEach(([num, name]) => {
       const chip = document.createElement('button');
       chip.className = 'player-chip';
       const teamNum = pTeams[name];
-      const col = teamNum ? CHIP_TEAM_COLORS[teamNum] : playerColor(parseInt(num));
+      const col = teamNum ? CHIP_TEAM_COLORS[teamNum] : playerColor(parseInt(num, 10));
       const dot = teamNum === 1 ? '\u25c6 ' : teamNum === 2 ? '\u25c6 ' : '';
-      chip.textContent = dot + name;
+      chip.textContent = dot + slotLabel(num, name);
       chip.dataset.num = num;
       chip.style.borderColor = col;
       chip.style.color        = col;
       chip.addEventListener('click', () => {
-        const n = parseInt(chip.dataset.num);
+        const n = parseInt(chip.dataset.num, 10);
         if (hiddenPlayers.has(n)) { hiddenPlayers.delete(n); chip.classList.remove('hidden-player'); }
         else { hiddenPlayers.add(n); chip.classList.add('hidden-player'); }
         renderFrame(replayFrame);
@@ -126,10 +227,16 @@ fetch('/api/replay/' + encodeURIComponent(FILENAME) + (MAX_FRAMES ? '?max_frames
       chips.appendChild(chip);
     });
 
+    const uniqueNameCount = Object.keys(nameCounts).length;
+    const slotCount = Object.keys(names).length;
+    const playerCountText = uniqueNameCount === slotCount
+      ? `${slotCount}`
+      : `${slotCount} (${uniqueNameCount} unique names)`;
     document.getElementById('replayInfo').textContent =
-      `Map: ${data.map} | Players: ${Object.keys(names).length} | Duration: ${fmtTime(data.duration)}`;
+      `Map: ${data.map} | Players: ${playerCountText} | Duration: ${fmtTime(data.duration)}`;
 
     buildStatsPanel(data);
+    loadReplayInsights(FILENAME);
     replayKillPos = computeKillPositions(data);
 
     // Load geo + topview in parallel
@@ -145,15 +252,36 @@ fetch('/api/replay/' + encodeURIComponent(FILENAME) + (MAX_FRAMES ? '?max_frames
         btnW.classList.toggle('active', showWireframe);
       }
       if (tvParams) {
-        const img = new Image();
-        img.onload = () => {
-          replayTopview = { img, params: tvParams };
-          const btn = document.getElementById('btnTopview');
-          btn.style.display = '';
-          btn.classList.toggle('active', showTopview);
-          renderFrame(replayFrame);
-        };
-        img.src = '/api/map/' + encodeURIComponent(mapName) + '/topview.png';
+        // Fetch SVG as a blob URL, load into Image, then rasterize onto an
+        // offscreen canvas at a fixed pixel size.  Storing a canvas element
+        // (instead of the SVG Image) makes the subsequent ctx.drawImage()
+        // reliable on all platforms — Chrome/Chromium does not support SVG
+        // blobs in createImageBitmap, and drawImage(svgImg) silently draws
+        // nothing when the SVG has no intrinsic pixel dimensions.
+        const svgUrl = '/api/map/' + encodeURIComponent(mapName) + '/topview.svg';
+        const wUnits = tvParams.max_x - tvParams.min_x;
+        const hUnits = tvParams.max_y - tvParams.min_y;
+        const rw = 1024, rh = Math.max(1, Math.round(1024 * hUnits / wUnits));
+        fetch(svgUrl)
+          .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+          .then(blob => {
+            const blobUrl = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = () => {
+              const oc = document.createElement('canvas');
+              oc.width = rw; oc.height = rh;
+              oc.getContext('2d').drawImage(img, 0, 0, rw, rh);
+              URL.revokeObjectURL(blobUrl);
+              replayTopview = { img: oc, params: tvParams };
+              const btn = document.getElementById('btnTopview');
+              btn.style.display = '';
+              btn.classList.toggle('active', showTopview);
+              renderFrame(replayFrame);
+            };
+            img.onerror = () => { URL.revokeObjectURL(blobUrl); console.warn('topview img decode failed'); };
+            img.src = blobUrl;
+          })
+          .catch(err => console.warn('topview load failed:', err));
       }
       renderFrame(0);
     });
@@ -258,10 +386,282 @@ function renderFrame(idx, alpha) {
 
   drawReplay(canvas, replayGeo, frame, replayData, hiddenPlayers, showTopview ? replayTopview : null, replayKillPos, showWireframe);
   updateKillFeed(idx);
+  rpUpdatePanel(frameA, idx);
+}
+
+// ─── HLTV Panel (live-updating scoreboard below the canvas) ─────────────────
+const RP_WPN_LABEL = {
+  'w_mk23':'MK23','w_mp5':'MP5','w_m4':'M4','w_super90':'M3',
+  'w_cannon':'HC','w_sniper':'SR','w_akimbo':'Dual','w_knife':'Knife','a_m61frag':'Gren',
+};
+// Approximate hit damage by location (base 90 MK23 × loc_mult, used for live DMG column).
+const RP_LOC_DMG = {
+  head: 162, chest: 59, stomach: 36, legs: 23,
+  unknown: 50, kvlr_helmet: 45, kvlr_vest: 9,
+};
+
+// Cache per-frame kill/hit/dmg/streak/shots counts (rebuilt on idx change).
+let _rpKills = {}, _rpDeaths = {}, _rpTK = {}, _rpHits = {};
+let _rpDmg = {}, _rpStreak = {}, _rpShotsLive = {};
+let _rpLastIdx = -1;
+// Persist last-seen weapon stem per player — avoids flicker when ps.w resets to 0 on respawn.
+const _wpnByNamePersist = {};
+
+function _rpBuildCounts(idx) {
+  if (idx === _rpLastIdx) return;
+  _rpLastIdx = idx;
+  _rpKills = {}; _rpDeaths = {}; _rpTK = {}; _rpHits = {};
+  _rpDmg = {}; _rpStreak = {}; _rpShotsLive = {};
+
+  // kills → K, D, TK, running streak
+  const _curStreak = {};
+  for (const kill of (replayData.kills || [])) {
+    if (kill.frame > idx) break;
+    if (kill.team_kill) {
+      _rpTK[kill.killer] = (_rpTK[kill.killer] || 0) + 1;
+    } else if (!kill.suicide) {
+      _rpKills[kill.killer] = (_rpKills[kill.killer] || 0) + 1;
+      _curStreak[kill.killer] = (_curStreak[kill.killer] || 0) + 1;
+      if ((_curStreak[kill.killer] || 0) > (_rpStreak[kill.killer] || 0))
+        _rpStreak[kill.killer] = _curStreak[kill.killer];
+    }
+    _rpDeaths[kill.victim] = (_rpDeaths[kill.victim] || 0) + 1;
+    _curStreak[kill.victim] = 0;
+  }
+
+  // hit_events → hits + live damage estimate
+  const namesByNum = replayData.player_names || {};
+  for (const hit of (replayData.hit_events || [])) {
+    if (hit.frame > idx) break;
+    const name = namesByNum[String(hit.attacker)];
+    if (!name) continue;
+    _rpHits[name] = (_rpHits[name] || 0) + 1;
+    _rpDmg[name]  = (_rpDmg[name]  || 0) + (RP_LOC_DMG[hit.location] || 50);
+  }
+
+  // shots_list → live shot counts for accuracy denominator
+  for (const s of (replayData.shots_list || [])) {
+    if (s[0] > idx) break;
+    const name = namesByNum[String(s[1])];
+    if (name) _rpShotsLive[name] = (_rpShotsLive[name] || 0) + 1;
+  }
+}
+
+// Item bitmask → {key, icon pic name, title}  (bits from _ITEM_INV_BITS in mvd2.py)
+const RP_ITEMS = [
+  { bit:  1, icon: 'i_jacketarmor', title: 'Kevlar Vest',   label: 'KV'  },
+  { bit:  2, icon: 'p_rebreather',  title: 'Kevlar Helmet', label: 'KH'  },
+  { bit:  4, icon: 'p_silencer',    title: 'Silencer',      label: 'SIL' },
+  { bit:  8, icon: 'p_bandolier',   title: 'Bandolier',     label: 'BND' },
+  { bit: 16, icon: 'p_laser',       title: 'Laser Sight',   label: 'LAS' },
+];
+
+function rpItemIcons(itemBits) {
+  if (!itemBits) return '';
+  return RP_ITEMS.filter(it => itemBits & it.bit).map(it =>
+    '<img src="/api/pics/' + it.icon + '" alt="' + it.label + '" title="' + it.title + '" '
+    + 'style="height:14px;width:auto;image-rendering:pixelated;vertical-align:middle;margin-right:1px;" '
+    + 'onerror="this.outerHTML=\'<span style=&quot;font-size:.65rem;color:var(--muted);margin-right:2px;&quot;>' + it.label + '</span>\'">'
+  ).join('');
+}
+
+function rpEsc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function rpUpdatePanel(frameA, idx) {
+  const panel = document.getElementById('rpHltvPanel');
+  if (!panel || !replayData) return;
+
+  _rpBuildCounts(idx);
+
+  const players  = (frameA && frameA.players) || {};
+  const names    = replayData.player_names  || {};
+  const teams    = replayData.player_teams  || {};
+  const rw       = replayData.round_wins    || {};
+  const ts       = replayData.team_scores   || {};
+  const wmodels  = replayData.weapon_models || {};
+  const ghosts   = new Set(replayData.ghost_clients || []);
+  // ACTION! frames: the round goes active here and players are already spawned.
+  // Use a short 30-frame (3 s) window after ACTION! as the fallback-to-100 window —
+  // just long enough for the first health delta to arrive from the server.
+  // This avoids the false 100% green bar seen during the dead phase after a round ends,
+  // which happened when the old 150-frame window from round_start_frames was still active.
+  const _actionFrames = (replayData.round_events || [])
+    .filter(e => e.type === 'action').map(e => e.frame);
+  const _atRoundStart = _actionFrames.some(af => idx >= af && idx < af + 30);
+
+  // Per-frame lookups: health, armor, weapon, items, ammo, clip
+  const healthByName = {}, armorByName = {}, wpnByName = {}, itemsByName = {};
+  const ammoByName = {}, clipByName = {};
+  for (const [num, name] of Object.entries(names)) {
+    const ps = players[num];
+    if (!ps) continue;
+    if (ps.h  != null && ps.h  >= 0) healthByName[name] = ps.h;
+    if (ps.ar != null && ps.ar >= 0) armorByName[name]  = ps.ar;
+    if (ps.it) itemsByName[name] = ps.it;
+    if (ps.am != null && ps.am >= 0) ammoByName[name]   = ps.am;
+    if (ps.cl != null && ps.cl >= 0) clipByName[name]   = ps.cl;
+    if (ps.w  != null) {
+      const stem = wmodels[String(ps.w)];
+      if (stem) {
+        wpnByName[name] = stem;
+        _wpnByNamePersist[name] = stem;  // persist across frames
+      }
+    }
+  }
+
+  // Collect unique player names, split by team
+  const seen = new Set();
+  const team1 = [], team2 = [], noTeam = [], specs = [];
+  for (const [numStr, name] of Object.entries(names)) {
+    if (!name || name === '[MVDSPEC]' || seen.has(name)) continue;
+    seen.add(name);
+    const num = parseInt(numStr, 10);
+    if (ghosts.has(num)) continue;
+    const inFrame   = (players[numStr] != null);
+    const hasActivity = !!(_rpKills[name] || _rpDeaths[name] || _rpHits[name] || _rpTK[name] || (_rpShotsLive[name] || 0));
+    // Spectator = never appeared in current frame AND has no match activity at all.
+    // A player in the current frame is always shown (alive/spawned right now).
+    // A player with any kill/death/hit/shot is always shown even when between spawns.
+    if (!inFrame && !hasActivity) { specs.push(name); continue; }
+    const t = teams[name] || 0;
+    if (t === 1) team1.push(name);
+    else if (t === 2) team2.push(name);
+    else noTeam.push(name);
+  }
+  [team1, team2, noTeam].forEach(g => g.sort((a, b) => a.localeCompare(b)));
+
+  function hpCell(name) {
+    // Show actual HP if available; fall back to 100 during the inter-round window.
+    let hp = (healthByName[name] != null) ? healthByName[name] : (_atRoundStart ? 100 : null);
+    const ar = armorByName[name] ?? null;
+    if (hp == null && ar == null) return '<td style="min-width:75px;"></td>';
+    const pct = hp != null ? Math.max(0, Math.min(100, hp)) : 0;
+    const col = hp == null ? 'rgba(255,255,255,.1)' : (hp > 60 ? '#62d96b' : (hp > 30 ? '#e6c34d' : '#ff5d6c'));
+    const arHtml = ar != null ? '<span style="font-size:.68rem;color:#8ac4e8;margin-left:.3rem;" title="Armor">🛡' + ar + '</span>' : '';
+    return '<td style="min-width:75px;vertical-align:middle;">'
+      + '<div style="display:flex;align-items:center;gap:.25rem;">'
+      + '<div style="flex:1;height:6px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;">'
+      + '<div style="height:100%;width:' + pct + '%;background:' + col + ';"></div></div>'
+      + '<span style="font-size:.7rem;color:var(--muted);min-width:18px;text-align:right;">' + (hp != null ? hp : '—') + '</span>'
+      + arHtml + '</div></td>';
+  }
+
+  function wpnCell(name) {
+    const stem = wpnByName[name] || _wpnByNamePersist[name];
+    if (!stem) return '<td class="wpn"><span style="color:var(--muted);">—</span></td>';
+    const label = RP_WPN_LABEL[stem] || stem;
+    return '<td class="wpn"><img src="/api/pics/' + rpEsc(stem) + '" alt="' + rpEsc(label)
+      + '" title="' + rpEsc(label) + '" loading="lazy" '
+      + 'onerror="this.style.display=\'none\';this.insertAdjacentHTML(\'afterend\',\'<span style=&quot;font-size:.72rem;color:var(--muted);&quot;>' + rpEsc(label) + '</span>\')"></td>';
+  }
+
+  function ammoCell(name) {
+    const am = ammoByName[name];   // STAT_AMMO  = reserve pool
+    const cl = clipByName[name];   // STAT_CLIP  = loaded magazine
+    if (am == null && cl == null) return '<td style="text-align:center;color:var(--muted);">—</td>';
+    let s = '';
+    if (am != null) s += '<span style="font-size:.75rem;font-weight:600;">' + am + '</span>';
+    if (am != null && cl != null) s += '<span style="color:var(--muted);font-size:.7rem;">/</span>';
+    if (cl != null) s += '<span style="font-size:.72rem;color:var(--muted);">' + cl + '</span>';
+    return '<td style="text-align:center;white-space:nowrap;">' + s + '</td>';
+  }
+
+  function rowHtml(name, tnum) {
+    const k  = _rpKills[name]  || 0;
+    const d  = _rpDeaths[name] || 0;
+    const tk = _rpTK[name]     || 0;
+    const h  = _rpHits[name]   || 0;
+    const kd = d === 0 ? (k > 0 ? '∞' : '—') : (k / d).toFixed(2);
+    // Live accuracy from shots_list up to current frame
+    const liveShots = _rpShotsLive[name] || 0;
+    let accStr = '—';
+    if (liveShots > 0) accStr = Math.min(100, h / liveShots * 100).toFixed(1) + '%';
+    const tkHtml = tk > 0 ? '<span style="color:#e8b64d;">' + tk + '</span>' : '<span style="color:var(--muted);">—</span>';
+    const itemsHtml = rpItemIcons(itemsByName[name] || 0);
+    const liveDmg = _rpDmg[name] || 0;
+    const liveStreak = _rpStreak[name] || 0;
+    return '<tr class="team-' + (tnum || 0) + '">'
+      + '<td class="name" title="' + rpEsc(name) + '">' + rpEsc(name) + '</td>'
+      + hpCell(name)
+      + wpnCell(name)
+      + ammoCell(name)
+      + '<td style="text-align:left;white-space:nowrap;">' + (itemsHtml || '<span style="color:var(--muted);">—</span>') + '</td>'
+      + '<td>' + k + '</td>'
+      + '<td>' + d + '</td>'
+      + '<td>' + tkHtml + '</td>'
+      + '<td>' + kd + '</td>'
+      + '<td>' + h + '</td>'
+      + '<td>' + accStr + '</td>'
+      + '<td>' + liveDmg + '</td>'
+      + '<td>' + liveStreak + '</td>'
+      + '</tr>';
+  }
+
+  function teamHeader(tnum, label, score) {
+    return '<tr class="team-hdr t' + tnum + '"><td colspan="13">● '
+      + rpEsc(label) + '<span class="score">' + rpEsc(score) + '</span></td></tr>';
+  }
+
+  const hasRounds = (rw['1'] || 0) + (rw['2'] || 0) > 0;
+  const rows = [];
+  if (team1.length || team2.length) {
+    const r1 = hasRounds ? ((rw['1']||0) + ' rounds') : ((ts['1']||0) + ' kills');
+    const r2 = hasRounds ? ((rw['2']||0) + ' rounds') : ((ts['2']||0) + ' kills');
+    rows.push(teamHeader(1, 'Team 1', r1));
+    team1.forEach(n => rows.push(rowHtml(n, 1)));
+    rows.push(teamHeader(2, 'Team 2', r2));
+    team2.forEach(n => rows.push(rowHtml(n, 2)));
+  }
+  noTeam.forEach(n => rows.push(rowHtml(n, 0)));
+  if (specs.length) rows.push('<tr><td colspan="13" style="color:var(--muted);font-size:.75rem;padding:.3rem .5rem;">👁 ' + specs.map(rpEsc).join(', ') + '</td></tr>');
+
+  if (!rows.length) return;
+  panel.innerHTML = '<table class="rp-stats-table"><thead><tr>'
+    + '<th class="name">Player</th>'
+    + '<th style="min-width:75px;" title="Current health / armor">HP</th>'
+    + '<th title="Currently held weapon" style="text-align:center;">Wpn</th>'
+    + '<th title="Ammo (clip/reserve)" style="text-align:center;">Ammo</th>'
+    + '<th title="Current equipment items" style="text-align:left;">Items</th>'
+    + '<th>K</th><th>D</th>'
+    + '<th title="Team kills">TK</th>'
+    + '<th>K:D</th>'
+    + '<th title="Confirmed hits">Hits</th>'
+    + '<th title="Shot accuracy">Acc%</th>'
+    + '<th title="Damage dealt">DMG</th>'
+    + '<th title="Best streak">Streak</th>'
+    + '</tr></thead><tbody>' + rows.join('') + '</tbody></table>';
 }
 
 // ─── Kill Feed ──────────────────────────────────────────────────────────────
 const _TEAM_COLORS = { 1: '#e85d5d', 2: '#5b8dee' };
+
+function inferTeamNumFromLabel(name) {
+  const t = String(name || '').trim();
+  if (!t) return 0;
+  const low = t.toLowerCase();
+  if (low.includes('red')) return 1;
+  if (low.includes('blue')) return 2;
+  const m = low.match(/team\s*(\d+)/);
+  return m ? Number(m[1]) : 0;
+}
+
+function roundEventView(ev) {
+  if (!ev || !ev.type) return null;
+  if (ev.type === 'lights') return { label: 'LIGHTS...', color: 'var(--muted)', badge: '[round]', icon: '💡' };
+  if (ev.type === 'camera') return { label: 'CAMERA...', color: 'var(--muted)', badge: '[round]', icon: '🎥' };
+  if (ev.type === 'action') return { label: 'ACTION!', color: '#e8b64d', badge: '[round]', icon: '🎬' };
+  if (ev.type === 'tie') return { label: 'It was a tie.', color: 'var(--muted)', badge: '[round]', icon: '🤝' };
+  if (ev.type === 'win') {
+    const teamName = String(ev.team_name || 'Team');
+    const teamNum = inferTeamNumFromLabel(teamName);
+    const color = teamNum && _TEAM_COLORS[teamNum] ? _TEAM_COLORS[teamNum] : 'var(--text)';
+    const badge = teamNum === 1 ? '[round red]' : teamNum === 2 ? '[round blue]' : '[round]';
+    return { label: `${teamName} won!`, color, badge, icon: '🏁' };
+  }
+  return null;
+}
 
 function playerTeamColor(name) {
   const t = (replayData.player_teams || {})[name];
@@ -273,27 +673,51 @@ function playerTeamColor(name) {
 function updateKillFeed(frameIdx) {
   if (!replayData || !replayData.kills) return;
   const feed  = document.getElementById('killFeed');
-  const kills = replayData.kills.filter(k => k.frame <= frameIdx);
+  const kills = replayData.kills.filter(k => k.frame <= frameIdx)
+    .map(k => ({ kind: 'kill', frame: Number(k.frame || 0), kill: k }));
+  const rounds = (replayData.round_events || [])
+    .map(ev => ({ kind: 'round', frame: Number(ev.frame || 0), event: ev }))
+    .filter(e => e.frame <= frameIdx && !!roundEventView(e.event));
+  const timeline = kills.concat(rounds)
+    .sort((a, b) => (a.frame - b.frame) || (a.kind === 'round' ? -1 : 1));
+  // Remember if the user is near the bottom before re-rendering
+  const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
   feed.innerHTML = '';
-  const recent = kills.slice(-20);
+  const recent = timeline.slice(-24);
   const locColors = {head:'#e85d5d', stomach:'#e8b64d', chest:'#5b8dee',
-                     legs:'#4ecb71', unknown:'#7a7f9a'};
-  recent.forEach(k => {
+                     legs:'#4ecb71', unknown:'#7a7f9a', kvlr_helmet:'#e85d5d', kvlr_vest:'#5b8dee'};
+  recent.forEach(item => {
     const row  = document.createElement('div');
     row.className = 'kill-row';
-    const t    = fmtTime(k.frame * (replayData.frame_interval || 0.1));
-    const kCol = playerTeamColor(k.killer);
-    const vCol = playerTeamColor(k.victim);
-    const lCol = locColors[k.location] || '#7a7f9a';
-    row.innerHTML =
-      `<span style="color:var(--muted);font-size:.7rem;min-width:2.8rem">${t}</span>` +
-      `<span class="kill-killer" style="color:${kCol};font-weight:600">${k.killer}</span>` +
-      `<span style="color:var(--muted);margin:0 .25rem">⚔</span>` +
-      `<span class="kill-victim" style="color:${vCol}">${k.victim}</span>` +
-      `<span class="kill-weapon" style="margin-left:auto;color:${lCol};font-size:.72rem">${k.weapon} [${k.location}]</span>`;
+    const t    = fmtTime(item.frame * (replayData.frame_interval || 0.1));
+    if (item.kind === 'kill') {
+      const k = item.kill;
+      const kCol = playerTeamColor(k.killer);
+      const vCol = playerTeamColor(k.victim);
+      const lCol = locColors[k.location] || '#7a7f9a';
+      const icon = k.team_kill ? '🤝' : '⚔';
+      const tkLabel = k.team_kill
+        ? `<span style="color:var(--muted);font-size:.68rem;margin-left:.25rem">[TK]</span>` : '';
+      row.innerHTML =
+        `<span style="color:var(--muted);font-size:.7rem;min-width:2.8rem">${t}</span>` +
+        `<span class="kill-killer" style="color:${kCol};font-weight:600">${escHtml(k.killer)}</span>` +
+        `<span style="color:var(--muted);margin:0 .25rem">${icon}</span>` +
+        `<span class="kill-victim" style="color:${vCol}">${escHtml(k.victim)}</span>` +
+        tkLabel +
+        `<span class="kill-weapon" style="margin-left:auto;color:${lCol};font-size:.72rem">${escHtml(k.weapon)} [${escHtml(k.location)}]</span>`;
+    } else {
+      const rv = roundEventView(item.event);
+      if (!rv) return;
+      row.innerHTML =
+        `<span style="color:var(--muted);font-size:.7rem;min-width:2.8rem">${t}</span>` +
+        `<span style="color:${rv.color};margin-right:.3rem">${rv.icon}</span>` +
+        `<span style="color:${rv.color};font-size:.68rem;margin-right:.3rem;font-weight:600">${rv.badge}</span>` +
+        `<span style="color:${rv.color};font-weight:600">${escHtml(rv.label)}</span>`;
+    }
     feed.appendChild(row);
   });
-  feed.scrollTop = feed.scrollHeight;
+  // Only auto-scroll if the user was already at the bottom
+  if (atBottom) feed.scrollTop = feed.scrollHeight;
 }
 
 // ─── Kill positions pre-computation ────────────────────────────────────────
@@ -329,6 +753,7 @@ function buildStatsPanel(data) {
   const names       = data.player_names      || {};
   const killCounts  = data.kill_counts       || {};
   const deathCounts = data.death_counts      || {};
+  const tkCounts    = data.team_kill_counts  || {};
   const hitCounts   = data.hit_counts        || {};
   const weapCounts  = data.weapon_counts     || {};
   const killLocCnts = data.kill_loc_counts   || {};
@@ -336,6 +761,8 @@ function buildStatsPanel(data) {
   const damagDealt  = data.damage_dealt      || {};
   const hsKills     = data.headshot_kills    || {};
   const pTeams      = data.player_teams      || {};
+  const captainsByTeam = data.captains_by_team || {};
+  const captainStatsByTeam = data.captain_stats_by_team || {};
   const allKills    = data.kills             || [];
   const shotsFired  = data.shots_fired       || {};
   const accuracyMap = data.accuracy          || {};
@@ -343,6 +770,19 @@ function buildStatsPanel(data) {
   const ti          = data.frame_interval    || 0.1;
   const TC          = { 1: '#e85d5d', 2: '#5b8dee' };
   const tCol        = n => { const t = pTeams[n]; return t ? TC[t] : 'var(--text)'; };
+  const playerLink = (name, color, weight) =>
+    `<a href="/player/${encodeURIComponent(name)}" ` +
+    `style="color:${color || 'var(--text)'};font-weight:${weight || 600};text-decoration:none;">` +
+    `${escHtml(name)}</a>`;
+  const captainLabel = (teamNum) => {
+    const key = String(teamNum);
+    const captain = (captainsByTeam[key] || '').trim();
+    if (!captain) return '';
+    const cMeta = captainStatsByTeam[key] || {};
+    const switches = Number(cMeta.switches || 0);
+    const sw = switches > 0 ? `, ${switches} switch${switches === 1 ? '' : 'es'}` : '';
+    return `Captain: ${captain}${sw}`;
+  };
 
   const rw = data.round_wins  || {};
   const rt = data.round_ties  || 0;
@@ -366,19 +806,55 @@ function buildStatsPanel(data) {
       `<span style="color:var(--muted)">vs</span>` +
       `<span style="color:#5b8dee;font-weight:600">Team 2: ${ts['2']||0} kills ●</span>`;
   }
+  const c1 = captainLabel(1);
+  const c2 = captainLabel(2);
+  if (c1 || c2) {
+    sumHtml += `<span style="color:var(--muted)">|</span>`;
+    if (c1) {
+      sumHtml += `<span style="color:#e85d5d">${escHtml(c1)}</span>`;
+    }
+    if (c2) {
+      if (c1) sumHtml += `<span style="color:var(--muted)">/</span>`;
+      sumHtml += `<span style="color:#5b8dee">${escHtml(c2)}</span>`;
+    }
+  }
   sumHtml += `</div>`;
   document.getElementById('matchSummary').innerHTML = sumHtml;
 
   // ── Player Stats Table ────────────────────────────────────────────────────
-  const allPnums = Object.keys(names).map(Number).sort();
-  const team1 = [], team2 = [], noTeam = [], spectators = [];
-
-  // Spectator = no kills, deaths, hits, damage, or shots fired — never participated.
-  const isSpectator = n =>
-    !killCounts[n] && !deathCounts[n] && !hitCounts[n] && !damagDealt[n] && !shotsFired[n];
-
+  const allPnums = Object.keys(names).map(Number).sort((a, b) => a - b);
+  const playerSlotsByName = {};
   allPnums.forEach(num => {
     const n = names[num];
+    if (!n) return;
+    if (!playerSlotsByName[n]) playerSlotsByName[n] = [];
+    playerSlotsByName[n].push(num);
+  });
+  const uniquePlayers = [];
+  const seenPlayers = new Set();
+  allPnums.forEach(num => {
+    const n = names[num];
+    if (!n || seenPlayers.has(n)) return;
+    seenPlayers.add(n);
+    uniquePlayers.push({ num, name: n, slots: playerSlotsByName[n] || [num] });
+  });
+  const team1 = [], team2 = [], noTeam = [], spectators = [];
+  // Set of player names that appeared in at least one position frame.
+  const withFrames = new Set(data.players_with_frames || []);
+
+  // Spectator = no kills, no shots fired, and either:
+  //   a) no deaths, hits, or damage (never did anything), OR
+  //   b) never appeared in a position frame (connected briefly but wasn't truly in-game)
+  const isSpectator = n => {
+    if (killCounts[n] || shotsFired[n]) return false;   // made kills or fired shots → real player
+    const hasActivity = deathCounts[n] || hitCounts[n] || damagDealt[n];
+    if (!hasActivity) return true;                       // zero everything → spectator
+    return !withFrames.has(n);                           // died but no position frames → ghost joiner
+  };
+
+  uniquePlayers.forEach(p => {
+    const num = p.num;
+    const n = p.name;
     if (isSpectator(n)) { spectators.push({num, name: n}); return; }
     const t = pTeams[n];
     if      (t === 1) team1.push({num, name: n});
@@ -389,7 +865,7 @@ function buildStatsPanel(data) {
   [team1, team2, noTeam].forEach(g => g.sort(byKills));
 
   const th = (t, title) =>
-    `<th title="${title}" style="text-align:center;padding:.25rem .4rem;` +
+    `<th class="help-label" title="${title}" style="text-align:center;padding:.25rem .4rem;` +
     `color:var(--muted);font-size:.7rem;text-transform:uppercase;font-weight:600">${t}</th>`;
   const td = v =>
     `<td style="text-align:center;padding:.25rem .4rem;font-variant-numeric:tabular-nums">${v}</td>`;
@@ -397,6 +873,9 @@ function buildStatsPanel(data) {
   function pRow(p, even) {
     const n   = p.name;
     const col = pTeams[n] ? TC[pTeams[n]] : playerColor(p.num);
+    const slotSuffix = (p.slots && p.slots.length > 1)
+      ? ` <span style="color:var(--muted);font-size:.7rem">[slots ${p.slots.join(', ')}]</span>`
+      : '';
     const k   = killCounts[n]  || 0;
     const d   = deathCounts[n] || 0;
     const h   = hitCounts[n]   || 0;
@@ -418,26 +897,39 @@ function buildStatsPanel(data) {
       aw.Accuracy   ? `<span title="Accuracy">🎯${aw.Accuracy}</span>`   : '',
       aw.Excellent  ? `<span title="Excellent">💎${aw.Excellent}</span>`  : '',
     ].filter(Boolean).join('\u202f') || '<span style="color:var(--muted)">—</span>';
+    const tk = tkCounts[n] || 0;
+    const tkStr = tk > 0 ? `<span style="color:#e8b64d">${tk}</span>` : '<span style="color:var(--muted)">—</span>';
+    const c1Name = (captainsByTeam['1'] || '').trim();
+    const c2Name = (captainsByTeam['2'] || '').trim();
+    const captainTeam = n === c1Name ? 1 : (n === c2Name ? 2 : 0);
+    const captainBadge = captainTeam
+      ? ` <span class="help-label" title="Team ${captainTeam} captain in this replay." style="display:inline-flex;align-items:center;justify-content:center;min-width:1rem;height:1rem;border-radius:999px;border:1px solid ${captainTeam === 1 ? '#e85d5d' : '#5b8dee'};color:${captainTeam === 1 ? '#e85d5d' : '#5b8dee'};font-size:.65rem;font-weight:700;vertical-align:middle;">C</span>`
+      : '';
     return `<tr style="background:${even ? 'rgba(255,255,255,.03)' : 'transparent'}">` +
-      `<td style="text-align:left;padding:.25rem .4rem;color:${col};font-weight:600">${n}</td>` +
-      td(k) + td(d) + td(kd) + td(h) + td(accStr) +
+      `<td style="text-align:left;padding:.25rem .4rem;">${playerLink(n, col, 600)}${captainBadge}${slotSuffix}</td>` +
+      td(k) + td(d) + `<td style="text-align:center;padding:.25rem .4rem">${tkStr}</td>` +
+      td(kd) + td(h) + td(accStr) +
       td(dmg > 0 ? dmg.toLocaleString() : '—') +
       `<td style="text-align:center;padding:.25rem .4rem;font-size:.78rem">${awStr}</td>` +
       `</tr>`;
   }
 
-  function teamHeader(col, label, score) {
+  function teamHeader(col, label, score, captainText) {
+    const capInfo = captainText
+      ? `<span style="color:var(--muted);font-size:.75rem;font-weight:500;"> (${escHtml(captainText)})</span>`
+      : '';
     return `<tr>` +
-      `<td colspan="8" style="color:${col};font-weight:700;padding:.5rem .4rem .2rem;` +
+      `<td colspan="9" style="color:${col};font-weight:700;padding:.5rem .4rem .2rem;` +
       `border-top:1px solid rgba(255,255,255,.1);font-size:.83rem">` +
-      `● ${label} — ${score}</td></tr>`;
+      `● ${label} — ${score}${capInfo}</td></tr>`;
   }
 
   let ptHtml = `<table style="width:100%;border-collapse:collapse;font-size:.82rem">` +
     `<thead><tr>` +
-    `<th style="text-align:left;padding:.25rem .4rem;color:var(--muted);font-size:.7rem;text-transform:uppercase;font-weight:600">Player</th>` +
+    `<th class="help-label" title="Player identity in this replay. Click a name to open profile." style="text-align:left;padding:.25rem .4rem;color:var(--muted);font-size:.7rem;text-transform:uppercase;font-weight:600">Player</th>` +
     th('K',   'Kills') +
     th('D',   'Deaths') +
+    th('TK',  'Team kills') +
     th('K/D', 'Kill / Death ratio') +
     th('Hits','Hits landed') +
     th('Acc', 'Shot accuracy \u2014 hits per shots fired (from muzzle-flash data)') +
@@ -448,9 +940,9 @@ function buildStatsPanel(data) {
   if (team1.length || team2.length) {
     const r1 = hasRounds ? `${rw['1']||0} round${(rw['1']||0)!==1?'s':''} won` : `${ts['1']||0} kills`;
     const r2 = hasRounds ? `${rw['2']||0} round${(rw['2']||0)!==1?'s':''} won` : `${ts['2']||0} kills`;
-    ptHtml += teamHeader('#e85d5d', 'Team 1', r1);
+    ptHtml += teamHeader('#e85d5d', 'Team 1', r1, captainLabel(1));
     team1.forEach((p, i) => ptHtml += pRow(p, i % 2 === 0));
-    ptHtml += teamHeader('#5b8dee', 'Team 2', r2);
+    ptHtml += teamHeader('#5b8dee', 'Team 2', r2, captainLabel(2));
     team2.forEach((p, i) => ptHtml += pRow(p, i % 2 === 0));
   } else {
     noTeam.forEach((p, i) => ptHtml += pRow(p, i % 2 === 0));
@@ -458,7 +950,13 @@ function buildStatsPanel(data) {
   ptHtml += `</tbody></table>`;
 
   if (spectators.length) {
-    const specNames = spectators.map(p => `<span style="color:var(--muted)">${p.name}</span>`).join(', ');
+    const specNames = spectators.map(p => {
+      const slots = playerSlotsByName[p.name] || [];
+      const label = slots.length > 1
+        ? `${playerLink(p.name, 'var(--muted)', 500)} <span style="color:var(--muted)">[slots ${slots.join(', ')}]</span>`
+        : playerLink(p.name, 'var(--muted)', 500);
+      return `<span style="color:var(--muted)">${label}</span>`;
+    }).join(', ');
     ptHtml += `<div style="font-size:.78rem;color:var(--muted);margin-top:.5rem;padding:.25rem .2rem">` +
       `👁 Spectators: ${specNames}</div>`;
   }
@@ -468,15 +966,15 @@ function buildStatsPanel(data) {
   // ── Match Highlights ──────────────────────────────────────────────────────
   const allP = [...team1, ...team2, ...noTeam];  // excludes spectators
 
-  // First blood
-  const firstKill = allKills[0];
+  // First blood (skip team kills)
+  const firstKill = allKills.find(k => !k.team_kill);
 
   // Best streak (consecutive kills without dying)
   let bestStreak = 0, bestStreakP = '';
   allP.forEach(p => {
     const n = p.name; let streak = 0, max = 0;
     allKills.forEach(k => {
-      if (k.killer === n) { if (++streak > max) max = streak; }
+      if (k.killer === n && !k.team_kill) { if (++streak > max) max = streak; }
       else if (k.victim === n) streak = 0;
     });
     if (max > bestStreak) { bestStreak = max; bestStreakP = n; }
@@ -522,7 +1020,8 @@ function buildStatsPanel(data) {
   document.getElementById('weaponStats').innerHTML = weapHtml;
 
   // ── Kill Locations ────────────────────────────────────────────────────────
-  const locColors = {head:'#e85d5d', stomach:'#e8b64d', chest:'#5b8dee', legs:'#4ecb71', unknown:'#7a7f9a'};
+  const locColors = {head:'#e85d5d', stomach:'#e8b64d', chest:'#5b8dee', legs:'#4ecb71', unknown:'#7a7f9a',
+                      kvlr_helmet:'#e85d5d', kvlr_vest:'#5b8dee'};
   let locHtml = '';
   Object.entries(killLocCnts).sort((a, b) => b[1] - a[1]).forEach(([l, c]) => {
     const pct = Math.round(c / totalKills * 100);
@@ -535,6 +1034,67 @@ function buildStatsPanel(data) {
   document.getElementById('locStats').innerHTML = locHtml;
 
   document.getElementById('matchStatsPanel').style.display = '';
+
+  // ── Full Kill Log ─────────────────────────────────────────────────────────
+  const locColors2 = {head:'#e85d5d', stomach:'#e8b64d', chest:'#5b8dee', legs:'#4ecb71',
+                      unknown:'#7a7f9a', kvlr_helmet:'#e85d5d', kvlr_vest:'#5b8dee'};
+  const killsSorted = allKills.slice().sort((a, b) => (a.frame || 0) - (b.frame || 0));
+  const fi = data.frame_interval || 0.1;
+  document.getElementById('killLogCount').textContent = killsSorted.length;
+  document.getElementById('killLogBody').innerHTML = killsSorted.length === 0
+    ? '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1rem;">No kills recorded.</td></tr>'
+    : killsSorted.map(k => {
+        const t     = fmtTime(Math.round((k.frame || 0) * fi));
+        const kCol  = tCol(k.killer);
+        const vCol  = tCol(k.victim);
+        const lCol  = locColors2[k.location] || '#7a7f9a';
+        const tkMark = k.team_kill ? ' <span style="color:var(--muted);font-size:.68rem">[TK]</span>' : '';
+        return `<tr>
+          <td style="color:var(--muted);font-size:.73rem;white-space:nowrap;">${t}</td>
+          <td>${playerLink(k.killer, kCol, 600)}</td>
+          <td style="text-align:center;color:var(--muted);">${k.team_kill ? '🤝' : '⚔'}</td>
+          <td>${playerLink(k.victim, vCol, 500)}${tkMark}</td>
+          <td class="num" style="color:var(--muted);font-size:.73rem;">${escHtml(k.weapon || '—')}</td>
+          <td class="num" style="color:${lCol};font-size:.73rem;">${escHtml(k.location || '—')}</td>
+        </tr>`;
+      }).join('');
+
+  // ── Chat Log ──────────────────────────────────────────────────────────────
+  const chatMsgs = (data.chat || []).map(c => ({ kind: 'chat', frame: Number(c.frame || 0), chat: c }));
+  const roundMsgs = (data.round_events || [])
+    .map(ev => ({ kind: 'round', frame: Number(ev.frame || 0), event: ev }))
+    .filter(e => !!roundEventView(e.event));
+  const chatTimeline = chatMsgs.concat(roundMsgs)
+    .sort((a, b) => (a.frame - b.frame) || (a.kind === 'round' ? -1 : 1));
+
+  document.getElementById('chatLogCount').textContent = chatTimeline.length;
+  document.getElementById('chatLogBody').innerHTML = chatTimeline.length === 0
+    ? '<span style="color:var(--muted)">No chat or round messages recorded.</span>'
+    : chatTimeline.map(item => {
+        const t = fmtTime(Math.round(item.frame * fi));
+        if (item.kind === 'round') {
+          const rv = roundEventView(item.event);
+          if (!rv) return '';
+          return `<div style="padding:.2rem 0;border-bottom:1px solid rgba(255,255,255,.05);">` +
+            `<span style="color:var(--muted);font-size:.7rem;display:inline-block;min-width:3rem;">${t}</span>` +
+            `<span style="color:${rv.color};font-size:.68rem;margin-right:.3rem;font-weight:600">${rv.badge}</span>` +
+            `<span style="color:${rv.color};font-weight:600">${escHtml(rv.label)}</span></div>`;
+        }
+
+        const c = item.chat;
+        const isTeam = !!c.team;
+        let teamNum = Number(c.team_num || 0);
+        if (!teamNum && c.sender && pTeams[c.sender]) teamNum = Number(pTeams[c.sender]);
+        const teamCol = (teamNum && TC[teamNum]) ? TC[teamNum] : '#5b8dee';
+        const teamLabel = teamNum === 1 ? '[team red]' : teamNum === 2 ? '[team blue]' : '[team]';
+        const teamBadge = isTeam
+          ? `<span style="color:${teamCol};font-size:.68rem;margin-right:.3rem;font-weight:600">${teamLabel}</span>`
+          : '';
+        const col = isTeam ? teamCol : 'var(--text)';
+        return `<div style="padding:.2rem 0;border-bottom:1px solid rgba(255,255,255,.05);">` +
+          `<span style="color:var(--muted);font-size:.7rem;display:inline-block;min-width:3rem;">${t}</span>` +
+          `${teamBadge}<span style="color:${col}">${escHtml(c.text)}</span></div>`;
+      }).join('');
 }
 
 function getPlayerColor(name, playerNames) {
@@ -547,6 +1107,10 @@ function getPlayerColor(name, playerNames) {
 function fmtTime(secs) {
   const m = Math.floor(secs / 60), s = Math.floor(secs % 60);
   return m + ':' + String(s).padStart(2,'0');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function playerColor(num) {

@@ -1,0 +1,417 @@
+{% extends "base.html" %}
+{% block title %}{{ weapon_name }} — Weapon Stats — AQ2{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.4rem;flex-wrap:wrap;">
+  <a href="/stats" style="color:var(--muted);font-size:.85rem;">← Stats</a>
+  <h1 style="font-size:1.4rem;font-weight:700;" id="weaponHeading">{{ weapon_name }}</h1>
+  <label style="font-size:.78rem;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:.4rem;margin-left:auto;">
+    Period:
+    <select id="periodFilter"
+      style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+             border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+      <option value="this_week">This Week</option>
+      <option value="last_week">Last Week</option>
+      <option value="this_month">This Month</option>
+      <option value="last_month">Last Month</option>
+      <option value="this_year" selected>This Year</option>
+      <option value="last_year">Last Year</option>
+      <option value="all">All Time</option>
+    </select>
+  </label>
+</div>
+
+<!-- ── Summary cards ── -->
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.7rem;margin-bottom:1.6rem;">
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="w-kills">—</div>
+    <div class="stat-label help-label" title="Kills on opponents with this weapon (team kills excluded).">Enemy Kills</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="w-hs">—</div>
+    <div class="stat-label help-label" title="Enemy kills with headshot location using this weapon.">HS Kills</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" style="color:var(--yellow)" id="w-hspct">—</div>
+    <div class="stat-label help-label" title="Headshot share of enemy kills: HS kills divided by enemy kills.">HS%</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="w-users">—</div>
+    <div class="stat-label help-label" title="Distinct players who used this weapon for kills.">Unique Users</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="w-matches">—</div>
+    <div class="stat-label help-label" title="Matches where this weapon appears in kill data.">Matches Used</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" style="color:var(--accent2)" id="w-tks">—</div>
+    <div class="stat-label help-label" title="Team-kill events made with this weapon.">Team Kills</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" style="color:var(--green)" id="w-winrate">—</div>
+    <div class="stat-label help-label" title="Percent of rounds won when this weapon gets a kill.">Kill Win%</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="w-kpm">—</div>
+    <div class="stat-label help-label" title="Average enemy kills with this weapon per match.">Kills / Match</div>
+  </div>
+</div>
+
+<!-- ── Hit location breakdown ── -->
+<div class="section-title">Hit Locations</div>
+<div class="card" style="padding:.9rem 1.2rem;max-width:420px;margin-bottom:1rem;">
+  <div id="hitLocBars"></div>
+</div>
+
+<!-- ── Top killers ── -->
+<div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:1.5rem;">
+  <span>Top Killers</span>
+  <div style="display:flex;align-items:center;gap:.8rem;">
+    <label style="font-size:.78rem;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:.4rem;">
+      Min games:
+      <select id="minGames"
+        style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+               border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+        <option value="1" selected>1</option>
+        <option value="3">3</option>
+        <option value="5">5</option>
+        <option value="10">10</option>
+      </select>
+    </label>
+    <label style="font-size:.78rem;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:.4rem;">
+      Per page:
+      <select id="pageSize"
+        style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+               border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="0">All</option>
+      </select>
+    </label>
+  </div>
+</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="killersTable">
+    <thead>
+      <tr>
+        <th class="num help-label" style="width:2.5rem;" title="Leaderboard position after current sorting.">#</th>
+        <th data-sort="name"      class="sortable help-label" title="Player name.">Player</th>
+        <th data-sort="games"     class="num sortable help-label" title="Matches where this player used this weapon for kills.">Games</th>
+        <th data-sort="kills"     class="num sortable help-label" title="Kills made with this weapon by the player.">Kills</th>
+        <th data-sort="avg_kills" class="num sortable help-label" title="Average weapon kills per match.">Avg&nbsp;K</th>
+        <th data-sort="hs"        class="num sortable help-label" title="Headshot kills with this weapon.">HS</th>
+        <th data-sort="hs_pct"    class="num sortable help-label" title="Headshot percentage for this weapon.">HS%</th>
+      </tr>
+    </thead>
+    <tbody id="killersBody">
+      <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Map effectiveness ── -->
+<div class="section-title" style="margin-top:2rem;">Map Effectiveness</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="mapEffTable">
+    <thead>
+      <tr>
+        <th class="help-label" title="Map name.">Map</th>
+        <th class="num help-label" title="Matches on this map where the weapon appears.">Matches</th>
+        <th class="num help-label" title="Kills with this weapon on this map.">Kills</th>
+        <th class="num help-label" title="Average kills with this weapon per match on this map.">Avg K/Match</th>
+        <th class="num help-label" title="Headshot percentage for this weapon on this map.">HS%</th>
+        <th class="num help-label" title="Percent of rounds won when this weapon gets a kill on this map.">Win%</th>
+      </tr>
+    </thead>
+    <tbody id="mapEffBody">
+      <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+<div id="killersPager" style="display:none;align-items:center;justify-content:center;gap:.6rem;margin-top:.6rem;font-size:.82rem;color:var(--muted);">
+  <button id="kPrevBtn"
+    style="background:var(--surface);border:1px solid var(--border);color:var(--text);
+           padding:.2rem .65rem;border-radius:var(--radius);cursor:pointer;font-size:.78rem;">← Prev</button>
+  <span id="kPageInfo"></span>
+  <button id="kNextBtn"
+    style="background:var(--surface);border:1px solid var(--border);color:var(--text);
+           padding:.2rem .65rem;border-radius:var(--radius);cursor:pointer;font-size:.78rem;">Next →</button>
+</div>
+
+<!-- ── Top victims ── -->
+<div class="section-title" style="margin-top:2rem;">Most Killed by this Weapon</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="victimsTable">
+    <thead>
+      <tr>
+        <th class="num help-label" style="width:2.5rem;" title="Ranking position after current sorting.">#</th>
+        <th data-sort="name"         class="sortable help-label" title="Player name.">Player</th>
+        <th data-sort="times_killed" class="num sortable help-label" title="How many times this player was killed by this weapon.">Times Killed</th>
+        <th data-sort="hs"           class="num sortable help-label" title="How many of these deaths were headshots.">HS Deaths</th>
+        <th data-sort="hs_pct"       class="num sortable help-label" title="Headshot share of deaths to this weapon.">HS%</th>
+      </tr>
+    </thead>
+    <tbody id="victimsBody">
+      <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.stat-big   { font-size:1.5rem;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums; }
+.stat-label { font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:.2rem; }
+.loc-row    { display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem;font-size:.83rem; }
+.loc-name   { width:4.5rem;color:var(--muted);flex-shrink:0; }
+.loc-cnt    { width:3rem;text-align:right;font-variant-numeric:tabular-nums;flex-shrink:0; }
+.loc-pct    { width:3.5rem;text-align:right;color:var(--muted);font-size:.75rem;flex-shrink:0; }
+th.sortable { cursor:pointer;user-select:none; }
+th.sortable:hover { color:var(--text); }
+</style>
+
+<script>
+(function () {
+  'use strict';
+
+  const WEAPON = {{ weapon_name | tojson }};
+  const base = '/api/weapon/' + encodeURIComponent(WEAPON);
+  const _periodAliases = {
+    alltime: 'all',
+    all_time: 'all',
+    thisweek: 'this_week',
+    lastweek: 'last_week',
+    thismonth: 'this_month',
+    lastmonth: 'last_month',
+    thisyear: 'this_year',
+    lastyear: 'last_year',
+    previous_year: 'last_year',
+  };
+  const _periodAllowed = new Set([
+    'this_week', 'last_week', 'this_month', 'last_month', 'this_year', 'last_year', 'all'
+  ]);
+  const _periodRaw = String(new URLSearchParams(window.location.search).get('period') || 'this_year').toLowerCase();
+  const _periodFromUrl = _periodAliases[_periodRaw] || _periodRaw;
+  const _currentPeriod = _periodAllowed.has(_periodFromUrl) ? _periodFromUrl : 'this_year';
+  const _periodSelect = document.getElementById('periodFilter');
+  if (_periodSelect) {
+    _periodSelect.value = _currentPeriod;
+    _periodSelect.addEventListener('change', function () {
+      const selected = String(this.value || 'this_year').toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      if (selected === 'this_year') params.delete('period');
+      else params.set('period', selected);
+      const qs = params.toString();
+      window.location.search = qs ? ('?' + qs) : '';
+    });
+  }
+
+  function periodFetch(path) {
+    const sep = path.includes('?') ? '&' : '?';
+    return fetch(path + sep + 'period=' + encodeURIComponent(_currentPeriod));
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function fmt(n, dec) {
+    if (n == null || n === '') return '—';
+    const v = parseFloat(n);
+    if (isNaN(v)) return '—';
+    return dec != null ? v.toFixed(dec) : v.toLocaleString();
+  }
+  function setEl(id, val) { const e = document.getElementById(id); if (e) e.textContent = val; }
+  function playerLink(name) {
+    return `<a href="/player/${encodeURIComponent(name)}" style="color:var(--text);font-weight:600;">${escHtml(name)}</a>`;
+  }
+
+  // ── Summary ────────────────────────────────────────────────────────────────
+  periodFetch(base + '/summary').then(r=>r.json()).then(d => {
+    setEl('w-kills',   fmt(d.enemy_kills));
+    setEl('w-hs',      fmt(d.loc_head));
+    setEl('w-hspct',   d.hs_pct != null ? parseFloat(d.hs_pct).toFixed(1)+'%' : '—');
+    setEl('w-users',   fmt(d.unique_users));
+    setEl('w-matches', fmt(d.matches_used));
+    setEl('w-tks',     fmt(d.team_kills));
+    setEl('w-winrate', d.kill_win_rate != null ? parseFloat(d.kill_win_rate).toFixed(1)+'%' : '—');
+    setEl('w-kpm',     d.kills_per_match != null ? parseFloat(d.kills_per_match).toFixed(2) : '—');
+
+    // Hit location bars
+    const locEl = document.getElementById('hitLocBars');
+    if (locEl && d.enemy_kills) {
+      const locs = [
+        { name: 'Head',    cnt: d.loc_head    || 0 },
+        { name: 'Stomach', cnt: d.loc_stomach || 0 },
+        { name: 'Chest',   cnt: d.loc_chest   || 0 },
+        { name: 'Legs',    cnt: d.loc_legs    || 0 },
+      ];
+      const total = locs.reduce((s, l) => s + l.cnt, 0);
+      const maxCnt = Math.max(...locs.map(l => l.cnt), 1);
+      locEl.innerHTML = locs.map(l => {
+        const pct = total ? (l.cnt / total * 100).toFixed(1) : 0;
+        const barW = Math.round(l.cnt / maxCnt * 100);
+        return `<div class="loc-row">
+          <span class="loc-name">${l.name}</span>
+          <div class="bar-outer" style="flex:1"><div class="bar-inner" style="width:${barW}%"></div></div>
+          <span class="loc-cnt">${l.cnt.toLocaleString()}</span>
+          <span class="loc-pct">${pct}%</span>
+        </div>`;
+      }).join('');
+    }
+  }).catch(()=>{});
+
+  // ── Top killers — sortable + paginated ────────────────────────────────────
+  let _kData = [];
+  let _kSort = { col: 'kills', dir: -1 };
+  let _kPage = 0;
+  let _kPageSize = 25;
+
+  function _renderKPager() {
+    const pager = document.getElementById('killersPager');
+    const total = _kData.length;
+    const pageSize = _kPageSize === 0 ? total : _kPageSize;
+    if (total === 0 || pageSize >= total) { pager.style.display = 'none'; return; }
+    const maxPage = Math.ceil(total / pageSize) - 1;
+    pager.style.display = 'flex';
+    document.getElementById('kPrevBtn').disabled = _kPage === 0;
+    document.getElementById('kNextBtn').disabled = _kPage >= maxPage;
+    const start = _kPage * pageSize + 1;
+    const end   = Math.min((_kPage + 1) * pageSize, total);
+    document.getElementById('kPageInfo').textContent = `${start}–${end} of ${total}`;
+  }
+
+  function renderKillers() {
+    const { col, dir } = _kSort;
+    _kData.sort((a, b) => {
+      let av = a[col], bv = b[col];
+      if (av == null) av = -Infinity;
+      if (bv == null) bv = -Infinity;
+      return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
+    });
+    const tbody = document.getElementById('killersBody');
+    if (!_kData.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1.5rem;">No data — try lowering the filter.</td></tr>';
+      _renderKPager();
+      return;
+    }
+    const total    = _kData.length;
+    const pageSize = _kPageSize === 0 ? total : _kPageSize;
+    const maxPage  = Math.ceil(total / pageSize) - 1;
+    if (_kPage > maxPage) _kPage = maxPage;
+    const start = _kPage * pageSize;
+    const end   = Math.min(start + pageSize, total);
+    tbody.innerHTML = _kData.slice(start, end).map((r, i) => `<tr>
+      <td class="num" style="color:var(--muted)">${start + i + 1}</td>
+      <td>${playerLink(r.name)}</td>
+      <td class="num">${r.games}</td>
+      <td class="num">${fmt(r.kills)}</td>
+      <td class="num">${fmt(r.avg_kills, 1)}</td>
+      <td class="num">${fmt(r.hs)}</td>
+      <td class="num">${r.hs_pct != null ? parseFloat(r.hs_pct).toFixed(1)+'%' : '—'}</td>
+    </tr>`).join('');
+    _renderKPager();
+  }
+
+  function loadKillers(minGames) {
+    document.getElementById('killersBody').innerHTML =
+      '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>';
+    periodFetch(base + '/top-killers?min_games=' + (minGames || 1))
+      .then(r=>r.json())
+      .then(data => { _kData = data; _kPage = 0; renderKillers(); })
+      .catch(() => {
+        document.getElementById('killersBody').innerHTML =
+          '<tr><td colspan="7" style="text-align:center;color:var(--accent2);padding:1rem;">Failed to load.</td></tr>';
+      });
+  }
+
+  document.getElementById('killersTable').querySelector('thead').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    const col = th.dataset.sort;
+    _kSort.col === col ? (_kSort.dir *= -1) : (_kSort.col = col, _kSort.dir = col === 'name' ? 1 : -1);
+    document.querySelectorAll('#killersTable th[data-sort]').forEach(h => {
+      h.style.color = h.dataset.sort === col ? 'var(--text)' : '';
+    });
+    renderKillers();
+  });
+  document.getElementById('minGames').addEventListener('change', function () {
+    loadKillers(parseInt(this.value, 10));
+  });
+  document.getElementById('pageSize').addEventListener('change', function () {
+    _kPageSize = parseInt(this.value, 10);
+    _kPage = 0;
+    renderKillers();
+  });
+  document.getElementById('kPrevBtn').addEventListener('click', function () {
+    if (_kPage > 0) { _kPage--; renderKillers(); }
+  });
+  document.getElementById('kNextBtn').addEventListener('click', function () {
+    const total    = _kData.length;
+    const pageSize = _kPageSize === 0 ? total : _kPageSize;
+    if (_kPage < Math.ceil(total / pageSize) - 1) { _kPage++; renderKillers(); }
+  });
+
+  // ── Victims — sortable ─────────────────────────────────────────────────────
+  let _vData = [];
+  let _vSort = { col: 'times_killed', dir: -1 };
+
+  function renderVictims() {
+    const { col, dir } = _vSort;
+    _vData.sort((a, b) => {
+      let av = a[col], bv = b[col];
+      if (av == null) av = -Infinity;
+      if (bv == null) bv = -Infinity;
+      return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
+    });
+    const tbody = document.getElementById('victimsBody');
+    if (!_vData.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1.5rem;">No data.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = _vData.map((r, i) => `<tr>
+      <td class="num" style="color:var(--muted)">${i + 1}</td>
+      <td>${playerLink(r.name)}</td>
+      <td class="num">${fmt(r.times_killed)}</td>
+      <td class="num">${fmt(r.hs)}</td>
+      <td class="num">${r.hs_pct != null ? parseFloat(r.hs_pct).toFixed(1)+'%' : '—'}</td>
+    </tr>`).join('');
+  }
+
+  document.getElementById('victimsTable').querySelector('thead').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    const col = th.dataset.sort;
+    _vSort.col === col ? (_vSort.dir *= -1) : (_vSort.col = col, _vSort.dir = col === 'name' ? 1 : -1);
+    document.querySelectorAll('#victimsTable th[data-sort]').forEach(h => {
+      h.style.color = h.dataset.sort === col ? 'var(--text)' : '';
+    });
+    renderVictims();
+  });
+
+  periodFetch(base + '/victims').then(r=>r.json()).then(data => { _vData = data; renderVictims(); }).catch(()=>{});
+
+  // ── Map effectiveness ─────────────────────────────────────────────────────
+  periodFetch(base + '/map-effectiveness?limit=30').then(r=>r.json()).then(data => {
+    const body = document.getElementById('mapEffBody');
+    if (!data || !data.length) {
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1.5rem;">No map effectiveness data.</td></tr>';
+      return;
+    }
+    body.innerHTML = data.map(r => `<tr>
+      <td><a href="/map/${encodeURIComponent(r.map)}" style="font-weight:600;color:var(--text);">${escHtml(r.map)}</a></td>
+      <td class="num">${fmt(r.matches)}</td>
+      <td class="num">${fmt(r.kills)}</td>
+      <td class="num">${fmt(r.avg_kills_per_match, 2)}</td>
+      <td class="num">${fmt(r.hs_pct, 1)}%</td>
+      <td class="num">${fmt(r.win_rate, 1)}%</td>
+    </tr>`).join('');
+  }).catch(()=>{});
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  loadKillers(1);
+})();
+</script>
+{% endblock %}

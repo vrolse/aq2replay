@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Recent Matches — AQ2{% endblock %}
+
+{% block content %}
+{% set active_stats_page = 'matches' %}
+{% include "_stats_nav.html" %}
+
+<div class="card">
+  <div class="stats-section-head">
+    <h2>Recent Matches</h2>
+  </div>
+  <p class="muted-note" style="margin-bottom:.8rem;">
+    Latest matches for the selected filters. Open any replay for full timeline details.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Match date and time.">Date</th>
+        <th class="help-label" title="Map played.">Map</th>
+        <th class="help-label" title="Detected mode detail.">Mode</th>
+        <th class="center help-label" title="Final round score (Team 1 - Team 2).">Score</th>
+        <th class="num help-label" title="Number of players in replay.">Players</th>
+        <th class="num help-label" title="Total kills in match.">Kills</th>
+        <th class="num help-label" title="Match duration.">Duration</th>
+      </tr>
+    </thead>
+    <tbody id="matchesTableBody">
+      <tr><td colspan="7" class="center muted-row">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  var S = window.AQ2Stats;
+  if (!S) return;
+
+  var filters = S.bindFilters();
+  S.initStatusBadge({ badgeId: 'statusBadge' });
+
+  var body = document.getElementById('matchesTableBody');
+  if (!body) return;
+
+  S.fetchJson('/api/stats/recent?limit=100', filters).then(function (rows) {
+    if (!rows || !rows.length) {
+      body.innerHTML = '<tr><td colspan="7" class="center muted-row">No matches found.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = rows.map(function (r) {
+      var replayUrl = '/replay/' + encodeURI(r.path || '');
+      return '<tr>' +
+        '<td>' + S.fmtDateTime(r.played_at) + '</td>' +
+        '<td><a href="' + replayUrl + '">' + S.escHtml(r.map || 'unknown') + '</a></td>' +
+        '<td>' + S.modeBadge(r.game_mode_detail, r.game_mode) + '</td>' +
+        '<td class="center"><span class="score-t1">' + S.fmtNum(r.t1_rounds) + '</span><span class="score-sep">-</span><span class="score-t2">' + S.fmtNum(r.t2_rounds) + '</span></td>' +
+        '<td class="num">' + S.fmtNum(r.player_count) + '</td>' +
+        '<td class="num">' + S.fmtNum(r.total_kills) + '</td>' +
+        '<td class="num">' + S.fmtDuration(r.duration) + '</td>' +
+      '</tr>';
+    }).join('');
+  }).catch(function () {
+    body.innerHTML = '<tr><td colspan="7" class="center muted-row">Failed to load recent matches.</td></tr>';
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AQ2 Live 3D</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0d1018; color:#ccc; font-family:sans-serif; overflow:hidden; }
+#wrap { position:relative; width:100vw; height:100vh; }
+canvas { display:block; width:100%; height:100%; }
+#overlay { position:absolute; inset:0; display:flex; align-items:center;
+           justify-content:center; color:#aaa; font-size:.88rem;
+           background:rgba(13,16,24,.75); pointer-events:none; }
+#statusBar { position:absolute; top:6px; left:50%; transform:translateX(-50%);
+             background:rgba(0,0,0,.6); padding:.2rem .65rem; border-radius:4px;
+             font-size:.72rem; color:#aaa; pointer-events:none; white-space:nowrap; }
+#camBtns { position:absolute; top:6px; right:6px; display:flex; gap:4px; z-index:10; }
+#camBtns button { background:rgba(0,0,0,.55); color:#ccc; border:1px solid #444;
+                  border-radius:4px; padding:2px 8px; font-size:.78rem; cursor:pointer; }
+#camBtns button.active { background:#3a5a8a; border-color:#5b8dee; }
+#fpsHint { display:none; position:absolute; inset:0; align-items:center;
+           justify-content:center; pointer-events:none; }
+#fpsHint > div { background:rgba(0,0,0,.65); color:#ddd; font-size:.85rem;
+                 padding:.45rem 1rem; border-radius:6px; text-align:center; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c3d"></canvas>
+  <div id="overlay">Connecting…</div>
+  <div id="statusBar">disconnected</div>
+  <div id="camBtns">
+    <button id="btnOrbit" class="active">↗ Orbit</button>
+    <button id="btnFPS">🎮 FPS</button>
+  </div>
+  <div id="fpsHint"><div>Click to capture mouse &nbsp;·&nbsp; Esc to exit</div></div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+    "three":        "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── URL params ────────────────────────────────────────────────────────────────
+const P = new URLSearchParams(location.search);
+const HOST = P.get('host') || '', PORT = P.get('port') || '', PASS = P.get('password') || '';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function lerpAngle(a, b, t) { let d = ((b-a)%360+540)%360-180; return a+d*t; }
+
+// ── Renderer ──────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c3d');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+let W = innerWidth, H = innerHeight;
+renderer.setSize(W, H);
+window.addEventListener('resize', () => {
+  W = innerWidth; H = innerHeight;
+  renderer.setSize(W, H);
+  perspCam.aspect = W/H; perspCam.updateProjectionMatrix();
+});
+
+// ── Camera + controls ─────────────────────────────────────────────────────────
+const perspCam = new THREE.PerspectiveCamera(60, W/H, 8, 80000);
+let controls = new OrbitControls(perspCam, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+controls.screenSpacePanning = true;
+controls.minPolarAngle = 0; controls.maxPolarAngle = Math.PI*0.85;
+controls.minDistance = 100; controls.maxDistance = 30000;
+
+// ── Scene ─────────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1018);
+scene.add(new THREE.AmbientLight(0xffffff, 2.4));
+const sun = new THREE.DirectionalLight(0xfff5e0, 1.0);
+sun.position.set(-3000, 8000, 2000); scene.add(sun);
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const TEAM_COLORS   = { 1:0xe85d5d, 2:0x5b8dee };
+const NEUTRAL_COLOR = 0x88aacc;
+const PLAYER_HEIGHT = 56, PLAYER_RADIUS = 16, Q2_FLOOR = 24;
+
+// ── Global state ──────────────────────────────────────────────────────────────
+let loadedMap = null, md2Data = null;
+const md2Skins = {};
+const playerMeshes = {};  // name → {mesh,geo,label,team,animTime,lastPos,currentAnim}
+let lastSnapshot = null, prevFramePlrs = null, curFramePlrs = null;
+let curFrameArrival = 0, prevFrameArrival = 0, frameIntervalMs = 100;
+let rafHandle = null, lastTS = 0;
+
+// ── FPS state ─────────────────────────────────────────────────────────────────
+let fpsMode = false;
+const fpsKeys = new Set();
+let fpsPitch = 0, fpsYaw = 0;
+const FPS_SPEED = 900, FPS_SENS = 0.002;
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+const overlay   = document.getElementById('overlay');
+const statusBar = document.getElementById('statusBar');
+function setOverlay(msg) {
+  overlay.style.display = msg ? 'flex' : 'none';
+  if (msg) overlay.textContent = msg;
+}
+function setStatus(msg) { statusBar.textContent = msg; }
+
+// ── BSP mesh loading ──────────────────────────────────────────────────────────
+async function loadMesh(mapname) {
+  setOverlay('Loading map…');
+  let res; try { res = await fetch('/api/map/'+encodeURIComponent(mapname)+'/mesh'); }
+          catch { setOverlay('Map fetch failed.'); return; }
+  if (!res.ok) { setOverlay('No BSP for "'+mapname+'".'); return; }
+  const md = await res.json();
+
+  // Remove previous map geometry
+  for (const o of scene.children.filter(o => o.userData.isMap)) scene.remove(o);
+
+  // Compute playable-area centre for camera positioning
+  const pb = md.playable;
+  const cx = (pb.min_x + pb.max_x) * 0.5;
+  const cz = -(pb.min_y + pb.max_y) * 0.5;
+  const span = Math.max(pb.max_x - pb.min_x, pb.max_y - pb.min_y);
+  perspCam.position.set(cx - span*0.35, span*0.55, cz + span*0.35);
+  perspCam.lookAt(cx, 0, cz);
+  controls.target.set(cx, 0, cz);
+  controls.update();
+
+  // Load textures in parallel
+  const tl = new THREE.TextureLoader();
+  const texMap = {};
+  await Promise.all(md.textures.map(name => new Promise(ok => {
+    tl.load('/api/map/'+encodeURIComponent(mapname)+'/texture/'+encodeURIComponent(name),
+      t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; texMap[name]=t; ok(); },
+      undefined, () => { texMap[name]=null; ok(); });
+  })));
+
+  // Build one mesh per texture group
+  for (const g of md.groups) {
+    if (!g.positions.length) continue;
+    const n = g.positions.length/3;
+    const pos = new Float32Array(n*3), nrm = new Float32Array(n*3);
+    for (let i=0; i<n; i++) {
+      pos[i*3]=g.positions[i*3];   pos[i*3+1]=g.positions[i*3+2]; pos[i*3+2]=-g.positions[i*3+1];
+      nrm[i*3]=g.normals[i*3];    nrm[i*3+1]=g.normals[i*3+2];   nrm[i*3+2]=-g.normals[i*3+1];
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    geo.setAttribute('uv',       new THREE.Float32BufferAttribute(g.uvs,2));
+    geo.setAttribute('normal',   new THREE.BufferAttribute(nrm,3));
+    const tex = texMap[md.textures[g.tex_index]] || null;
+    const mat = new THREE.MeshLambertMaterial({
+      map:tex, color:tex?0xffffff:0x888888,
+      transparent:g.opacity<1, opacity:g.opacity, side:THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.userData.isMap = true; scene.add(mesh);
+  }
+  setOverlay('');
+}
+
+// ── MD2 player model ──────────────────────────────────────────────────────────
+async function loadMD2() {
+  try {
+    const res = await fetch('/api/player/male/md2');
+    if (!res.ok) return;
+    const d = await res.json();
+    d.frames = d.frames.map(f => new Float32Array(f));
+    d.uvsArr = new Float32Array(d.uvs); delete d.uvs;
+    const upright = ['stand','run','attack','pain1','pain2','pain3'];
+    let minY = Infinity;
+    for (const a of upright) {
+      const r = d.anims[a]; if (!r) continue;
+      for (let fi=r[0]; fi<=r[1]; fi++) {
+        const f=d.frames[fi]; if (!f) continue;
+        for (let i=1; i<f.length; i+=3) minY = Math.min(minY, f[i]);
+      }
+    }
+    d.floorOffset = minY===Infinity ? 24 : -minY;
+    md2Data = d;
+  } catch(e) { console.warn('MD2 load failed:', e); }
+}
+
+async function loadTeamSkins() {
+  const ldr = new THREE.TextureLoader();
+  const lt = url => new Promise(ok => ldr.load(url, t => { t.colorSpace=THREE.SRGBColorSpace; ok(t); }, undefined, ()=>ok(null)));
+  [md2Skins[1], md2Skins[2]] = await Promise.all([lt('/players/male/ctf_r.png'), lt('/players/male/ctf_b.png')]);
+  md2Skins[0] = md2Skins[1];
+}
+
+// ── Player mesh management ────────────────────────────────────────────────────
+function ensurePlayer(name, team) {
+  if (playerMeshes[name]) return;
+  const col = TEAM_COLORS[team] || NEUTRAL_COLOR;
+  let inner, geo = null;
+  if (md2Data) {
+    geo = new THREE.BufferGeometry();
+    const pa = new Float32Array(md2Data.ntri*9), ua = new Float32Array(md2Data.uvsArr);
+    geo.setAttribute('position', new THREE.BufferAttribute(pa,3));
+    geo.setAttribute('uv',       new THREE.BufferAttribute(ua,2));
+    const skin = md2Skins[team]||null;
+    inner = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map:skin, color:skin?0xffffff:col, side:THREE.FrontSide, depthTest:false }));
+    inner.renderOrder=2; inner.frustumCulled=false;
+    const f0=md2Data.frames[0];
+    if (f0) { geo.attributes.position.array.set(f0); geo.attributes.position.needsUpdate=true; }
+  } else {
+    const c = new THREE.Color(col), m = new THREE.MeshBasicMaterial({color:c,depthTest:false});
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(PLAYER_RADIUS,PLAYER_RADIUS,PLAYER_HEIGHT,8),m);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(PLAYER_RADIUS*1.1,8,6),m);
+    body.renderOrder=head.renderOrder=2;
+    head.position.y=PLAYER_HEIGHT*0.5+PLAYER_RADIUS*0.8;
+    inner=new THREE.Group(); inner.add(body,head);
+  }
+  const grp=new THREE.Group(); grp.add(inner); grp.visible=false; scene.add(grp);
+  const disc=new THREE.Mesh(new THREE.CircleGeometry(PLAYER_RADIUS*1.2,16),
+    new THREE.MeshBasicMaterial({color:col,side:THREE.DoubleSide,depthTest:false}));
+  disc.rotation.x=-Math.PI/2; disc.position.y=1; disc.renderOrder=1; disc.frustumCulled=false;
+  grp.add(disc);
+  const lbl=makeLabel(name,col); scene.add(lbl);
+  playerMeshes[name] = {mesh:grp,geo,label:lbl,team,animTime:0,lastPos:null,currentAnim:'stand'};
+}
+
+function makeLabel(name, colHex) {
+  const cvs=document.createElement('canvas'); cvs.width=256; cvs.height=48;
+  const ctx=cvs.getContext('2d');
+  ctx.fillStyle='rgba(0,0,0,.55)'; ctx.roundRect(2,2,252,44,8); ctx.fill();
+  ctx.fillStyle='#'+new THREE.Color(colHex).getHexString();
+  ctx.font='bold 22px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(name,128,24);
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cvs),depthTest:false,transparent:true}));
+  spr.scale.set(220,42,1); spr.visible=false; return spr;
+}
+
+function animatePlayer(pm, p, dt) {
+  if (!md2Data||!pm.geo) return;
+  let speed=0, vspeed=0;
+  if (pm.lastPos&&dt>0) {
+    const dx=p.x-pm.lastPos.x, dy=p.y-pm.lastPos.y;
+    speed=Math.sqrt(dx*dx+dy*dy)/dt;
+    vspeed=((p.z||0)-(pm.lastPos.z||0))/dt;
+  }
+  pm.lastPos={x:p.x,y:p.y,z:p.z||0};
+  const anim=vspeed>80?'jump':speed>30?'run':'stand';
+  if (anim!==pm.currentAnim) { pm.currentAnim=anim; pm.animTime=0; }
+  if (dt>0) pm.animTime+=dt*10;
+  const range=md2Data.anims[anim]||md2Data.anims['stand'];
+  if (!range) return;
+  const [start,end]=range, count=end-start+1;
+  const fi=pm.animTime%count;
+  const iA=start+Math.floor(fi), iB=start+(Math.floor(fi)+1)%count;
+  const al=fi-Math.floor(fi);
+  const fA=md2Data.frames[iA], fB=md2Data.frames[iB];
+  if (!fA||!fB) return;
+  const dst=pm.geo.attributes.position.array;
+  for (let i=0;i<dst.length;i++) dst[i]=fA[i]+(fB[i]-fA[i])*al;
+  pm.geo.attributes.position.needsUpdate=true;
+}
+
+// ── Player update ─────────────────────────────────────────────────────────────
+function updatePlayers(players, names, teams, ghosts, dt) {
+  const gs=new Set(ghosts||[]);
+  const nameSet=new Set(Object.values(names));
+  // Hide players no longer in roster
+  for (const [n,pm] of Object.entries(playerMeshes)) {
+    if (!nameSet.has(n)) { pm.mesh.visible=pm.label.visible=false; }
+  }
+  for (const [numStr,name] of Object.entries(names)) {
+    if (!name||name==='[MVDSPEC]'||gs.has(parseInt(numStr))) continue;
+    const team=teams[name]||0;
+    ensurePlayer(name,team);
+    const pm=playerMeshes[name]; if (!pm) continue;
+    const p=players[numStr];
+    const flOff=md2Data?md2Data.floorOffset:0;
+    if (p) {
+      pm.mesh.visible=pm.label.visible=true;
+      pm.mesh.position.set(p.x,(p.z||0)-Q2_FLOOR+flOff,-p.y);
+      pm.mesh.rotation.y=-p.a*Math.PI/180;
+      pm.label.position.set(p.x,(p.z||0)+PLAYER_HEIGHT+20,-p.y);
+      animatePlayer(pm,{x:p.x,y:p.y,z:p.z||0},dt);
+    } else {
+      pm.mesh.visible=pm.label.visible=false; pm.lastPos=null;
+    }
+  }
+}
+
+// ── Interpolation helpers ─────────────────────────────────────────────────────
+function lerpPlrs(A, B, al) {
+  if (!B) return A||{};
+  const out={};
+  for (const [k,a] of Object.entries(A||{})) {
+    const b=B[k];
+    if (b) {
+      const da=((b.a-a.a)%360+540)%360-180;
+      out[k]={x:a.x+(b.x-a.x)*al, y:a.y+(b.y-a.y)*al, z:(a.z||0)+((b.z||0)-(a.z||0))*al, a:a.a+da*al};
+    } else out[k]=a;
+  }
+  for (const [k,b] of Object.entries(B||{})) { if (!(k in out)) out[k]=b; }
+  return out;
+}
+
+// ── Render loop ───────────────────────────────────────────────────────────────
+function animLoop(ts) {
+  rafHandle=requestAnimationFrame(animLoop);
+  const dt=Math.min((ts-lastTS)/1000,0.1); lastTS=ts;
+  if (!fpsMode) controls.update();
+  if (fpsMode&&fpsKeys.size>0) {
+    const mv=FPS_SPEED*dt;
+    const fwd=new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(fpsPitch,fpsYaw,0,'YXZ'));
+    const rgt=new THREE.Vector3(1,0,0).applyEuler(new THREE.Euler(0,fpsYaw,0,'YXZ'));
+    if (fpsKeys.has('KeyW')||fpsKeys.has('ArrowUp'))    perspCam.position.addScaledVector(fwd,mv);
+    if (fpsKeys.has('KeyS')||fpsKeys.has('ArrowDown'))  perspCam.position.addScaledVector(fwd,-mv);
+    if (fpsKeys.has('KeyA')||fpsKeys.has('ArrowLeft'))  perspCam.position.addScaledVector(rgt,-mv);
+    if (fpsKeys.has('KeyD')||fpsKeys.has('ArrowRight')) perspCam.position.addScaledVector(rgt,mv);
+    if (fpsKeys.has('Space'))                           perspCam.position.y+=mv;
+    if (fpsKeys.has('ControlLeft')||fpsKeys.has('ControlRight')) perspCam.position.y-=mv;
+  }
+  if (lastSnapshot) {
+    const fi=Math.max(30,frameIntervalMs);
+    let al=(performance.now()-curFrameArrival)/fi;
+    if (al<0) al=0; if (al>1) al=1;
+    const plrs=lerpPlrs(prevFramePlrs,curFramePlrs,al);
+    updatePlayers(plrs,lastSnapshot.player_names||{},lastSnapshot.player_teams||{},lastSnapshot.ghost_clients||[],dt);
+  }
+  renderer.render(scene,perspCam);
+}
+function startLoop() { if (!rafHandle) rafHandle=requestAnimationFrame(animLoop); }
+
+// ── SSE connection ────────────────────────────────────────────────────────────
+let evtSource=null;
+function connect() {
+  if (!HOST||!PORT) { setOverlay('No host/port specified.'); return; }
+  const url='/api/live/stream?host='+encodeURIComponent(HOST)+'&port='+encodeURIComponent(PORT)+'&password='+encodeURIComponent(PASS);
+  const src=new EventSource(url);
+  evtSource=src;
+  src.onmessage=ev=>{
+    if (evtSource!==src) return;
+    let snap; try { snap=JSON.parse(ev.data); } catch { return; }
+    if (snap.type==='error') { setStatus('error: '+snap.error); return; }
+    if (snap.type!=='snapshot') return;
+    const prev=lastSnapshot; lastSnapshot=snap;
+    setStatus('live · frame '+snap.frame_idx); setOverlay('');
+    const mn=snap.map||'';
+    if (mn&&mn!==loadedMap) {
+      loadedMap=mn;
+      loadMesh(mn).catch(()=>setOverlay('Map load failed.'));
+    }
+    const now=performance.now();
+    const frPlrs=(snap.frame&&snap.frame.players)||{};
+    if (!prev||!snap.frame) {
+      prevFramePlrs=curFramePlrs=frPlrs;
+      curFrameArrival=prevFrameArrival=now;
+    } else {
+      prevFramePlrs=curFramePlrs||frPlrs;
+      prevFrameArrival=curFrameArrival;
+      curFramePlrs=frPlrs; curFrameArrival=now;
+      const dd=Math.max(30,Math.min(400,now-prevFrameArrival));
+      frameIntervalMs=frameIntervalMs*0.8+dd*0.2;
+    }
+    startLoop();
+  };
+  src.onerror=()=>{
+    if (evtSource!==src) return;
+    setStatus('connection lost'); setOverlay('Connection lost.');
+  };
+}
+
+// ── Camera mode buttons ───────────────────────────────────────────────────────
+const btnOrbit=document.getElementById('btnOrbit'), btnFPS=document.getElementById('btnFPS');
+btnOrbit.addEventListener('click', ()=>{ if (fpsMode) exitFPS(); });
+btnFPS.addEventListener('click',   ()=>{ if (!fpsMode) enterFPS(); });
+
+function enterFPS() {
+  fpsMode=true; controls.enabled=false;
+  btnFPS.classList.add('active'); btnOrbit.classList.remove('active');
+  const e=new THREE.Euler().setFromQuaternion(perspCam.quaternion,'YXZ');
+  fpsYaw=e.y; fpsPitch=e.x;
+  document.getElementById('fpsHint').style.display='flex';
+  canvas.requestPointerLock();
+}
+function exitFPS() {
+  fpsMode=false; controls.enabled=true;
+  btnOrbit.classList.add('active'); btnFPS.classList.remove('active');
+  document.getElementById('fpsHint').style.display='none';
+  if (document.pointerLockElement===canvas) document.exitPointerLock();
+}
+document.addEventListener('pointerlockchange',()=>{ if (document.pointerLockElement!==canvas&&fpsMode) exitFPS(); });
+canvas.addEventListener('click',()=>{ if (fpsMode) canvas.requestPointerLock(); });
+document.addEventListener('mousemove',ev=>{
+  if (document.pointerLockElement!==canvas) return;
+  fpsYaw-=ev.movementX*FPS_SENS;
+  fpsPitch=Math.max(-1.48,Math.min(1.48,fpsPitch-ev.movementY*FPS_SENS));
+  perspCam.rotation.order='YXZ'; perspCam.rotation.y=fpsYaw; perspCam.rotation.x=fpsPitch;
+});
+document.addEventListener('keydown',ev=>{ fpsKeys.add(ev.code); if (ev.code==='Escape'&&fpsMode) exitFPS(); });
+document.addEventListener('keyup',ev=>fpsKeys.delete(ev.code));
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+await Promise.all([loadMD2(), loadTeamSkins()]);
+connect();
+</script>
+</body>
+</html>

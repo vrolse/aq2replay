@@ -1,0 +1,924 @@
+{% extends "base.html" %}
+{% block title %}{% if p1 and p2 %}{{ p1 }} vs {{ p2 }} — {% endif %}H2H — AQ2{% endblock %}
+
+{% block content %}
+<style>
+.h2h-breadcrumb {
+  margin-bottom: 1rem;
+  font-size: .82rem;
+  color: var(--muted);
+}
+.h2h-breadcrumb a { color: var(--muted); }
+.h2h-breadcrumb a.player-link { color: var(--accent); }
+
+.h2h-filter-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: .45rem;
+  margin-bottom: .8rem;
+  flex-wrap: wrap;
+}
+.h2h-filter-label {
+  font-size: .72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.h2h-filter-select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: .28rem .55rem;
+  font-size: .82rem;
+}
+
+.h2h-hero {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.2fr) minmax(180px, 1fr);
+  gap: .9rem;
+  align-items: stretch;
+  margin-bottom: 1rem;
+  padding: 1rem;
+}
+.h2h-fighter {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,.02);
+  padding: .9rem .95rem;
+}
+.h2h-fighter-name {
+  font-size: .92rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: .25rem;
+}
+.h2h-fighter-sub {
+  font-size: .72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.h2h-fighter-main {
+  font-size: 2.1rem;
+  line-height: 1.1;
+  font-weight: 800;
+  margin-top: .45rem;
+}
+
+.h2h-center {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(91,141,238,.12) 0%, rgba(232,93,93,.08) 100%);
+  padding: .9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+.h2h-center-kicker {
+  font-size: .72rem;
+  color: var(--muted);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.h2h-center-ratio {
+  font-size: 2.2rem;
+  line-height: 1.1;
+  font-weight: 800;
+  margin: .2rem 0;
+}
+.h2h-center-adv {
+  font-size: .84rem;
+  color: var(--text);
+}
+
+.h2h-insights {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(140px, 1fr));
+  gap: .7rem;
+  margin-bottom: 1.3rem;
+}
+.h2h-insight {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: .75rem .8rem;
+}
+.h2h-insight-label {
+  font-size: .68rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.h2h-insight-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-top: .2rem;
+  color: var(--text);
+}
+.h2h-insight-sub {
+  margin-top: .15rem;
+  font-size: .74rem;
+  color: var(--muted);
+}
+
+.h2h-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+}
+
+.h2h-split {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--border);
+  display: flex;
+}
+.h2h-split-p1 { background: var(--accent); height: 100%; }
+.h2h-split-p2 { background: var(--accent2); height: 100%; }
+
+.h2h-result-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: .12rem .52rem;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+.h2h-win { color: var(--green); border-color: rgba(78,203,113,.45); background: rgba(78,203,113,.1); }
+.h2h-loss { color: var(--accent2); border-color: rgba(232,93,93,.45); background: rgba(232,93,93,.1); }
+.h2h-tie { color: var(--muted); background: rgba(122,127,154,.12); }
+
+#h2hCompareTable {
+  margin: 0 auto;
+  table-layout: fixed;
+}
+#h2hCompareTable th,
+#h2hCompareTable td {
+  text-align: center;
+}
+#h2hCompareTable .h2h-col-player {
+  width: 34%;
+}
+#h2hCompareTable .h2h-col-stat {
+  width: 32%;
+}
+
+#h2hWeaponTable,
+#h2hLocTable,
+#h2hMapTable,
+#h2hMatchTable {
+  margin: 0 auto;
+  table-layout: fixed;
+}
+
+#h2hWeaponTable th,
+#h2hLocTable th,
+#h2hMapTable th,
+#h2hMatchTable th,
+#h2hWeaponTable td,
+#h2hLocTable td,
+#h2hMapTable td,
+#h2hMatchTable td {
+  text-align: center;
+}
+
+#h2hMapTable td.h2h-map-cell {
+  text-align: center;
+}
+#h2hMatchTable td.h2h-match-cell {
+  text-align: left;
+}
+
+@media (max-width: 1100px) {
+  .h2h-insights { grid-template-columns: repeat(3, minmax(160px, 1fr)); }
+}
+@media (max-width: 850px) {
+  .h2h-hero { grid-template-columns: 1fr; }
+  .h2h-two-col { grid-template-columns: 1fr; }
+}
+@media (max-width: 680px) {
+  .h2h-insights { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+}
+
+.h2h-load-more-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: .6rem;
+}
+.h2h-load-more-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: .38rem .8rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: .8rem;
+  transition: background .15s, border-color .15s;
+}
+.h2h-load-more-btn:hover {
+  background: rgba(255,255,255,.04);
+  border-color: var(--accent);
+}
+</style>
+
+{% if not (p1 and p2) %}
+<div class="card" style="max-width:460px;margin:3rem auto;padding:2rem 2.2rem;">
+  <h2 style="margin-bottom:1.3rem;font-size:1.15rem;">Head-to-Head Comparison</h2>
+  <form method="get" action="/h2h">
+    <div style="margin-bottom:.85rem;">
+      <label style="display:block;margin-bottom:.32rem;font-size:.76rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Player 1</label>
+      <input id="h2hPickerP1" name="p1" type="text" placeholder="Player name…"
+             style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:.42rem .65rem;font-size:.9rem;"
+             autocomplete="off" required>
+    </div>
+    <div style="margin-bottom:1.3rem;">
+      <label style="display:block;margin-bottom:.32rem;font-size:.76rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Player 2</label>
+      <input id="h2hPickerP2" name="p2" type="text" placeholder="Player name…"
+             style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:.42rem .65rem;font-size:.9rem;"
+             autocomplete="off" required>
+    </div>
+    <button type="submit"
+            style="width:100%;background:var(--accent);border:none;color:#fff;border-radius:var(--radius);padding:.52rem 1rem;font-size:.9rem;font-weight:700;cursor:pointer;">Compare →</button>
+  </form>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var S = window.AQ2Stats;
+  if (!S) return;
+  S.initPlayerAutocomplete(document.getElementById('h2hPickerP1'));
+  S.initPlayerAutocomplete(document.getElementById('h2hPickerP2'));
+});
+</script>
+{% else %}
+
+<div class="h2h-breadcrumb">
+  <a href="/stats">Stats</a> /
+  <a class="player-link" href="/player/{{ p1 | urlencode }}">{{ p1 }}</a>
+  vs
+  <a class="player-link" href="/player/{{ p2 | urlencode }}">{{ p2 }}</a>
+</div>
+
+<div class="h2h-filter-row">
+  <label class="h2h-filter-label" for="h2hPeriodSelect">Time Range</label>
+  <select id="h2hPeriodSelect" class="h2h-filter-select">
+    <option value="this_week">This Week</option>
+    <option value="last_week">Last Week</option>
+    <option value="this_month">This Month</option>
+    <option value="last_month">Last Month</option>
+    <option value="this_year" selected>This Year</option>
+    <option value="last_year">Last Year</option>
+    <option value="all">All Time</option>
+  </select>
+</div>
+
+<div class="card h2h-hero">
+  <div class="h2h-fighter">
+    <div class="h2h-fighter-name" style="color:var(--accent);">
+      <a href="/player/{{ p1 | urlencode }}" style="color:var(--accent);">{{ p1 }}</a>
+    </div>
+    <div class="h2h-fighter-sub">Kills On {{ p2 }}</div>
+    <div class="h2h-fighter-main" id="h2h-p1-kills" style="color:var(--accent);">-</div>
+  </div>
+
+  <div class="h2h-center">
+    <div class="h2h-center-kicker">Head To Head</div>
+    <div class="h2h-center-ratio" id="h2h-ratio">-</div>
+    <div class="h2h-center-adv" id="h2h-advantage">Loading duel edge...</div>
+  </div>
+
+  <div class="h2h-fighter" style="text-align:right;">
+    <div class="h2h-fighter-name" style="color:var(--accent2);">
+      <a href="/player/{{ p2 | urlencode }}" style="color:var(--accent2);">{{ p2 }}</a>
+    </div>
+    <div class="h2h-fighter-sub">Kills On {{ p1 }}</div>
+    <div class="h2h-fighter-main" id="h2h-p2-kills" style="color:var(--accent2);">-</div>
+  </div>
+</div>
+
+<div class="h2h-insights">
+  <div class="h2h-insight">
+    <div class="h2h-insight-label help-label" title="Matches where both selected players appeared together.">Shared Games</div>
+    <div class="h2h-insight-value" id="h2h-insight-shared">-</div>
+    <div class="h2h-insight-sub">Matches where both played</div>
+  </div>
+  <div class="h2h-insight">
+    <div class="h2h-insight-label help-label" title="Who has the better match-win record in shared games.">Match Edge</div>
+    <div class="h2h-insight-value" id="h2h-insight-edge">-</div>
+    <div class="h2h-insight-sub" id="h2h-insight-edge-sub">-</div>
+  </div>
+  <div class="h2h-insight">
+    <div class="h2h-insight-label help-label" title="Average kills per shared match shown as {{ p1 }} / {{ p2 }}.">Avg Kills / Game</div>
+    <div class="h2h-insight-value" id="h2h-insight-avgkills">-</div>
+    <div class="h2h-insight-sub">In shared matches</div>
+  </div>
+  <div class="h2h-insight">
+    <div class="h2h-insight-label help-label" title="Average damage per shared match shown as {{ p1 }} / {{ p2 }}.">Avg Damage / Game</div>
+    <div class="h2h-insight-value" id="h2h-insight-avgdmg">-</div>
+    <div class="h2h-insight-sub">Total damage per match</div>
+  </div>
+  <div class="h2h-insight">
+    <div class="h2h-insight-label help-label" title="Average of per-match accuracy values shown as {{ p1 }} / {{ p2 }}.">Avg Accuracy</div>
+    <div class="h2h-insight-value" id="h2h-insight-acc">-</div>
+    <div class="h2h-insight-sub">Average of per-match accuracy</div>
+  </div>
+  <div class="h2h-insight">
+    <div class="h2h-insight-label help-label" title="Result trend over the most recent shared matches.">Recent Form</div>
+    <div class="h2h-insight-value" id="h2h-insight-form">-</div>
+    <div class="h2h-insight-sub" id="h2h-insight-form-sub">Last 10 shared</div>
+  </div>
+  <div class="h2h-insight">
+    <div class="h2h-insight-label help-label" title="Shared-match win rate shown as {{ p1 }}% / {{ p2 }}%.">Match Win Rate</div>
+    <div class="h2h-insight-value" id="h2h-insight-winrate">-</div>
+    <div class="h2h-insight-sub" id="h2h-insight-winrate-sub">Shared match wins</div>
+  </div>
+  <div class="h2h-insight">
+    <div class="h2h-insight-label help-label" title="How strongly one player outperforms the other in direct duel outcomes.">Dominance Score</div>
+    <div class="h2h-insight-value" id="h2h-insight-dominance">-</div>
+    <div class="h2h-insight-sub" id="h2h-insight-dominance-sub">Direct duel balance</div>
+  </div>
+  <div class="h2h-insight">
+    <div class="h2h-insight-label help-label" title="Rivalry intensity score based on encounter frequency and duel balance.">Rivalry Index</div>
+    <div class="h2h-insight-value" id="h2h-insight-rivalry">-</div>
+    <div class="h2h-insight-sub" id="h2h-insight-rivalry-sub">Frequent encounter rank</div>
+  </div>
+</div>
+
+<div class="section-title" style="margin-bottom:.6rem;text-align:center;">Career In Shared Matches</div>
+<div class="card" style="padding:0;overflow-x:auto;margin-bottom:1.2rem;max-width:980px;margin-left:auto;margin-right:auto;">
+  <table id="h2hCompareTable" style="min-width:550px;">
+    <thead>
+      <tr>
+        <th class="h2h-col-player help-label" id="h2hColP1" title="Values for {{ p1 }}.">{{ p1 }}</th>
+        <th class="h2h-col-stat help-label" title="Compared metric.">Stat</th>
+        <th class="h2h-col-player help-label" id="h2hColP2" title="Values for {{ p2 }}.">{{ p2 }}</th>
+      </tr>
+    </thead>
+    <tbody id="h2hCompareBody">
+      <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:1.2rem;">Loading...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="h2h-two-col">
+  <div class="card" style="padding:0;overflow-x:auto;margin:0;">
+    <div class="section-title" style="margin:.9rem 1rem .45rem;border-bottom:none;padding-bottom:0;">Duel Weapons</div>
+    <table id="h2hWeaponTable" style="min-width:520px;">
+      <thead>
+        <tr>
+          <th class="num help-label" title="Direct duel kills by {{ p1 }} using this weapon.">{{ p1 }}</th>
+          <th class="help-label" title="Weapon used in direct duel kills between the two players.">Weapon</th>
+          <th class="num help-label" title="Direct duel kills by {{ p2 }} using this weapon.">{{ p2 }}</th>
+        </tr>
+      </thead>
+      <tbody id="h2hWeaponBody">
+        <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:1rem;">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="padding:0;overflow-x:auto;margin:0;">
+    <div class="section-title" style="margin:.9rem 1rem .45rem;border-bottom:none;padding-bottom:0;">Duel Hit Location</div>
+    <table id="h2hLocTable" style="min-width:520px;">
+      <thead>
+        <tr>
+          <th class="num help-label" title="Direct duel kills by {{ p1 }} at this hit location.">{{ p1 }}</th>
+          <th class="help-label" title="Body location of the killing shot in direct duels.">Location</th>
+          <th class="num help-label" title="Direct duel kills by {{ p2 }} at this hit location.">{{ p2 }}</th>
+        </tr>
+      </thead>
+      <tbody id="h2hLocBody">
+        <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:1rem;">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section-title" style="margin-bottom:.6rem;text-align:center;">Map Breakdown</div>
+<div class="card" style="padding:0;overflow-x:auto;margin-bottom:1.2rem;">
+  <table id="h2hMapTable" style="min-width:720px;">
+    <thead>
+      <tr>
+        <th class="num help-label" title="Match wins for {{ p1 }} on this map.">{{ p1 }}</th>
+        <th class="help-label" title="Map name and number of shared games on that map.">Map / Games</th>
+        <th class="num help-label" title="Match wins for {{ p2 }} on this map.">{{ p2 }}</th>
+        <th class="num help-label" title="Win difference between players on this map.">Edge</th>
+      </tr>
+    </thead>
+    <tbody id="h2hMapBody">
+      <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1.2rem;">Loading...</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="h2h-load-more-wrap" style="margin-bottom:1.2rem;">
+  <button id="h2hMapLoadMore" class="h2h-load-more-btn" type="button" style="display:none;">Show More</button>
+</div>
+
+<div class="section-title" style="margin-bottom:.6rem;text-align:center;">Shared Match History</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="h2hMatchTable" style="min-width:940px;">
+    <thead>
+      <tr>
+        <th class="help-label" title="Match date.">Date</th>
+        <th class="help-label" title="Map name and match score.">Map / Score</th>
+        <th class="num help-label" title="{{ p1 }} kills in this shared match.">{{ p1 }}</th>
+        <th class="num help-label" title="Direct duel result between {{ p1 }} and {{ p2 }} in this match.">Duel</th>
+        <th class="num help-label" title="{{ p2 }} kills in this shared match.">{{ p2 }}</th>
+        <th class="num help-label" title="Match duration.">Duration</th>
+      </tr>
+    </thead>
+    <tbody id="h2hMatchBody">
+      <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1.2rem;">Loading...</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="h2h-load-more-wrap">
+  <button id="h2hMatchLoadMore" class="h2h-load-more-btn" type="button" style="display:none;">Show More</button>
+</div>
+
+<div class="section-title" style="margin-top:1.4rem;margin-bottom:.6rem;text-align:center;">Frequent Encounters</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="h2hRivalryTable" style="min-width:720px;">
+    <thead>
+      <tr>
+        <th class="num help-label" style="width:2.6rem;" title="Ranking position by rivalry score.">#</th>
+        <th class="help-label" title="Player pair.">Pair</th>
+        <th class="num help-label" title="Number of shared matches between the pair.">Encounters</th>
+        <th class="num help-label" title="How even the pair's match results are.">Balance</th>
+        <th class="num help-label" title="Composite rivalry score based on frequency and competitiveness.">Rivalry Index</th>
+      </tr>
+    </thead>
+    <tbody id="h2hRivalryBody">
+      <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1.2rem;">Loading...</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if p1 and p2 %}
+<script>
+(function() {
+  'use strict';
+  var P1 = {{ p1 | tojson }};
+  var P2 = {{ p2 | tojson }};
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function toNum(v) {
+    var n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function fmtInt(v) {
+    return Math.round(toNum(v)).toLocaleString();
+  }
+  function fmtOne(v) {
+    return toNum(v).toFixed(1);
+  }
+  function fmtPct(v) {
+    if (v == null || !Number.isFinite(Number(v))) return '-';
+    return Number(v).toFixed(1) + '%';
+  }
+  function fmtDate(unix) {
+    if (!unix) return '-';
+    return new Date(unix * 1000).toLocaleDateString(undefined,
+      { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+  function fmtDuration(sec) {
+    var total = Math.max(0, Math.round(toNum(sec)));
+    var m = Math.floor(total / 60);
+    var s = total % 60;
+    return m + ':' + String(s).padStart(2, '0');
+  }
+  function fmtKd(k, d) {
+    return d ? (k / d).toFixed(2) : (k > 0 ? k.toFixed(2) : '0.00');
+  }
+
+  function compareRow(label, display1, display2, raw1, raw2, reverse) {
+    var c1 = '';
+    var c2 = '';
+    if (Number.isFinite(raw1) && Number.isFinite(raw2) && raw1 !== raw2) {
+      var p1Better = reverse ? raw1 < raw2 : raw1 > raw2;
+      c1 = p1Better ? 'var(--green)' : 'var(--accent2)';
+      c2 = p1Better ? 'var(--accent2)' : 'var(--green)';
+    }
+    return '<tr>' +
+      '<td style="color:' + c1 + ';font-weight:600;">' + display1 + '</td>' +
+      '<td style="color:var(--muted);font-weight:600;">' + label + '</td>' +
+      '<td style="color:' + c2 + ';font-weight:600;">' + display2 + '</td>' +
+      '</tr>';
+  }
+
+  function splitBar(v1, v2) {
+    var total = v1 + v2;
+    var p1Pct = total > 0 ? (v1 * 100 / total) : 50;
+    var p2Pct = 100 - p1Pct;
+    return '<div class="h2h-split">' +
+      '<span class="h2h-split-p1" style="width:' + p1Pct.toFixed(1) + '%"></span>' +
+      '<span class="h2h-split-p2" style="width:' + p2Pct.toFixed(1) + '%"></span>' +
+      '</div>';
+  }
+
+  var H2H_PERIOD_VALUES = ['this_week', 'last_week', 'this_month', 'last_month', 'this_year', 'last_year', 'all'];
+  function normalizePeriod(v) {
+    var raw = String(v || '').toLowerCase().replace(/-/g, '_').trim();
+    if (!raw) return 'this_year';
+    if (raw === 'alltime' || raw === 'all_time') return 'all';
+    if (raw === 'thisweek') return 'this_week';
+    if (raw === 'lastweek') return 'last_week';
+    if (raw === 'thismonth') return 'this_month';
+    if (raw === 'lastmonth') return 'last_month';
+    if (raw === 'thisyear') return 'this_year';
+    if (raw === 'lastyear' || raw === 'previous_year') return 'last_year';
+    return H2H_PERIOD_VALUES.indexOf(raw) >= 0 ? raw : 'this_year';
+  }
+  function periodFromUrl() {
+    try {
+      var qp = new URLSearchParams(window.location.search || '');
+      return normalizePeriod(qp.get('period'));
+    } catch (_) {
+      return 'this_year';
+    }
+  }
+  function syncPeriodInUrl(period) {
+    try {
+      var url = new URL(window.location.href);
+      url.searchParams.set('period', period);
+      window.history.replaceState({}, '', url.toString());
+    } catch (_) {}
+  }
+
+  var periodSelect = document.getElementById('h2hPeriodSelect');
+  var activePeriod = periodFromUrl();
+  if (periodSelect) periodSelect.value = activePeriod;
+
+  function fetchAndRender(period) {
+    var normalizedPeriod = normalizePeriod(period);
+    activePeriod = normalizedPeriod;
+    if (periodSelect) periodSelect.value = normalizedPeriod;
+    syncPeriodInUrl(normalizedPeriod);
+
+    fetch('/api/h2h?p1=' + encodeURIComponent(P1) +
+          '&p2=' + encodeURIComponent(P2) +
+          '&period=' + encodeURIComponent(normalizedPeriod))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d && d.period) {
+        activePeriod = normalizePeriod(d.period);
+        if (periodSelect) periodSelect.value = activePeriod;
+      }
+      var k1 = toNum(d.p1_kills);
+      var k2 = toNum(d.p2_kills);
+      var matches = d.matches || [];
+      var maps = d.maps || [];
+      var n = matches.length;
+
+      document.getElementById('h2h-p1-kills').textContent = fmtInt(k1);
+      document.getElementById('h2h-p2-kills').textContent = fmtInt(k2);
+      document.getElementById('h2h-ratio').textContent =
+        k2 > 0 ? (k1 / k2).toFixed(2) : (k1 > 0 ? 'INF' : '-');
+
+      var killDiff = Math.abs(k1 - k2);
+      var advEl = document.getElementById('h2h-advantage');
+      if (k1 === k2) {
+        advEl.textContent = 'Dead even in direct duels.';
+        advEl.style.color = 'var(--muted)';
+      } else if (k1 > k2) {
+        advEl.textContent = P1 + ' leads by ' + killDiff + ' kills.';
+        advEl.style.color = 'var(--accent)';
+      } else {
+        advEl.textContent = P2 + ' leads by ' + killDiff + ' kills.';
+        advEl.style.color = 'var(--accent2)';
+      }
+
+      var totals = matches.reduce(function(acc, m) {
+        acc.p1K += toNum(m.p1_kills);
+        acc.p1D += toNum(m.p1_deaths);
+        acc.p1Dmg += toNum(m.p1_damage);
+        if (m.p1_acc != null && Number.isFinite(Number(m.p1_acc))) {
+          acc.p1Acc += Number(m.p1_acc);
+          acc.p1AccN += 1;
+        }
+        acc.p2K += toNum(m.p2_kills);
+        acc.p2D += toNum(m.p2_deaths);
+        acc.p2Dmg += toNum(m.p2_damage);
+        if (m.p2_acc != null && Number.isFinite(Number(m.p2_acc))) {
+          acc.p2Acc += Number(m.p2_acc);
+          acc.p2AccN += 1;
+        }
+        if (toNum(m.p1_kills) > toNum(m.p2_kills)) acc.p1MatchWins += 1;
+        else if (toNum(m.p2_kills) > toNum(m.p1_kills)) acc.p2MatchWins += 1;
+        else acc.matchTies += 1;
+        acc.bestP1 = Math.max(acc.bestP1, toNum(m.p1_kills));
+        acc.bestP2 = Math.max(acc.bestP2, toNum(m.p2_kills));
+        return acc;
+      }, {
+        p1K: 0, p1D: 0, p1Dmg: 0, p1Acc: 0, p1AccN: 0,
+        p2K: 0, p2D: 0, p2Dmg: 0, p2Acc: 0, p2AccN: 0,
+        p1MatchWins: 0, p2MatchWins: 0, matchTies: 0,
+        bestP1: 0, bestP2: 0
+      });
+
+      var p1AvgKills = n ? (totals.p1K / n) : 0;
+      var p2AvgKills = n ? (totals.p2K / n) : 0;
+      var p1AvgDmg = n ? (totals.p1Dmg / n) : 0;
+      var p2AvgDmg = n ? (totals.p2Dmg / n) : 0;
+      var p1AvgAcc = totals.p1AccN ? (totals.p1Acc / totals.p1AccN) : null;
+      var p2AvgAcc = totals.p2AccN ? (totals.p2Acc / totals.p2AccN) : null;
+
+      document.getElementById('h2h-insight-shared').textContent = fmtInt(n);
+      document.getElementById('h2h-insight-edge').textContent = totals.p1MatchWins + ' - ' + totals.p2MatchWins;
+      document.getElementById('h2h-insight-edge-sub').textContent = totals.matchTies + ' tied matches';
+      document.getElementById('h2h-insight-avgkills').textContent = fmtOne(p1AvgKills) + ' / ' + fmtOne(p2AvgKills);
+      document.getElementById('h2h-insight-avgdmg').textContent = fmtInt(p1AvgDmg) + ' / ' + fmtInt(p2AvgDmg);
+      document.getElementById('h2h-insight-acc').textContent =
+        (p1AvgAcc == null || p2AvgAcc == null) ? '-' : (p1AvgAcc.toFixed(1) + '% / ' + p2AvgAcc.toFixed(1) + '%');
+
+      var recent = matches.slice(0, 10);
+      var recentP1 = 0, recentP2 = 0, recentDiff = 0;
+      recent.forEach(function(m) {
+        var a = toNum(m.p1_kills);
+        var b = toNum(m.p2_kills);
+        if (a > b) recentP1 += 1;
+        else if (b > a) recentP2 += 1;
+        recentDiff += (a - b);
+      });
+      document.getElementById('h2h-insight-form').textContent = recentP1 + ' - ' + recentP2;
+      document.getElementById('h2h-insight-form-sub').textContent =
+        'Last ' + recent.length + ' shared, diff ' + (recentDiff > 0 ? '+' : '') + recentDiff;
+
+      document.getElementById('h2h-insight-winrate').textContent =
+        fmtPct(d.p1_match_win_rate) + ' / ' + fmtPct(d.p2_match_win_rate);
+      document.getElementById('h2h-insight-winrate-sub').textContent =
+        fmtInt(d.p1_match_wins) + ' - ' + fmtInt(d.p2_match_wins) +
+        ' wins, ' + fmtInt(d.match_ties) + ' ties';
+
+      var dominance = Number(d.dominance_score || 0);
+      document.getElementById('h2h-insight-dominance').textContent =
+        (dominance > 0 ? '+' : '') + dominance.toFixed(1);
+      if (dominance > 0) {
+        document.getElementById('h2h-insight-dominance-sub').textContent = P1 + ' duel edge';
+      } else if (dominance < 0) {
+        document.getElementById('h2h-insight-dominance-sub').textContent = P2 + ' duel edge';
+      } else {
+        document.getElementById('h2h-insight-dominance-sub').textContent = 'Perfectly balanced duel';
+      }
+
+      document.getElementById('h2h-insight-rivalry').textContent = fmtOne(d.rivalry_index || 0);
+      document.getElementById('h2h-insight-rivalry-sub').textContent =
+        d.frequent_encounter_rank ? ('Global rank #' + d.frequent_encounter_rank) : 'Unranked rivalry';
+
+      var p1Kd = fmtKd(totals.p1K, totals.p1D);
+      var p2Kd = fmtKd(totals.p2K, totals.p2D);
+      var p1KillsOnP2 = k1;
+      var p2KillsOnP1 = k2;
+      var duelTotal = p1KillsOnP2 + p2KillsOnP1;
+      var p1Share = duelTotal ? (p1KillsOnP2 * 100 / duelTotal) : 50;
+      var p2Share = duelTotal ? (p2KillsOnP1 * 100 / duelTotal) : 50;
+
+      document.getElementById('h2hCompareBody').innerHTML = [
+        compareRow('Shared games', fmtInt(n), fmtInt(n), n, n, false),
+        compareRow('Match wins', fmtInt(totals.p1MatchWins), fmtInt(totals.p2MatchWins), totals.p1MatchWins, totals.p2MatchWins, false),
+        compareRow('Total kills', fmtInt(totals.p1K), fmtInt(totals.p2K), totals.p1K, totals.p2K, false),
+        compareRow('Total deaths', fmtInt(totals.p1D), fmtInt(totals.p2D), totals.p1D, totals.p2D, true),
+        compareRow('K/D', p1Kd, p2Kd, Number(p1Kd), Number(p2Kd), false),
+        compareRow('Avg kills / game', fmtOne(p1AvgKills), fmtOne(p2AvgKills), p1AvgKills, p2AvgKills, false),
+        compareRow('Avg damage / game', fmtInt(p1AvgDmg), fmtInt(p2AvgDmg), p1AvgDmg, p2AvgDmg, false),
+        compareRow('Avg accuracy', fmtPct(p1AvgAcc), fmtPct(p2AvgAcc),
+          p1AvgAcc == null ? NaN : p1AvgAcc,
+          p2AvgAcc == null ? NaN : p2AvgAcc,
+          false),
+        compareRow('Best single-game kills', fmtInt(totals.bestP1), fmtInt(totals.bestP2), totals.bestP1, totals.bestP2, false),
+        compareRow(escHtml(P1) + ' -> ' + escHtml(P2) + ' kills', fmtInt(p1KillsOnP2), fmtInt(p2KillsOnP1), p1KillsOnP2, p2KillsOnP1, false),
+        compareRow('Direct duel kill share', p1Share.toFixed(1) + '%', p2Share.toFixed(1) + '%', p1Share, p2Share, false)
+      ].join('');
+
+      function renderDuelBreakdown(bodyId, rows, keyName) {
+        var body = document.getElementById(bodyId);
+        if (!rows.length) {
+          body.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:1rem;">No duel events found.</td></tr>';
+          return;
+        }
+        body.innerHTML = rows.map(function(r) {
+          var v1 = toNum(r.p1_kills);
+          var v2 = toNum(r.p2_kills);
+          var diff = v1 - v2;
+          var edge;
+          var col;
+          if (diff === 0) {
+            edge = 'Even';
+            col = 'var(--muted)';
+          } else if (diff > 0) {
+            edge = P1 + ' +' + diff;
+            col = 'var(--accent)';
+          } else {
+            edge = P2 + ' +' + Math.abs(diff);
+            col = 'var(--accent2)';
+          }
+          return '<tr>' +
+            '<td class="num" style="font-weight:700;color:' + (v1 >= v2 ? 'var(--green)' : 'var(--text)') + '">' + fmtInt(v1) + '</td>' +
+            '<td>' +
+              '<div style="font-weight:600">' + escHtml(r[keyName] || 'unknown') + '</div>' +
+              '<div style="margin:.32rem auto .15rem;max-width:170px">' + splitBar(v1, v2) + '</div>' +
+              '<div style="font-size:.72rem;color:' + col + ';font-weight:600">' + escHtml(edge) + '</div>' +
+            '</td>' +
+            '<td class="num" style="font-weight:700;color:' + (v2 >= v1 ? 'var(--green)' : 'var(--text)') + '">' + fmtInt(v2) + '</td>' +
+            '</tr>';
+        }).join('');
+      }
+
+      renderDuelBreakdown('h2hWeaponBody', d.duel_weapons || [], 'weapon');
+      renderDuelBreakdown('h2hLocBody', d.duel_locations || [], 'location');
+
+      var mapBody = document.getElementById('h2hMapBody');
+      var mapMoreBtn = document.getElementById('h2hMapLoadMore');
+      var matchBody = document.getElementById('h2hMatchBody');
+      var matchMoreBtn = document.getElementById('h2hMatchLoadMore');
+      var MAP_PAGE_SIZE = 10;
+      var MATCH_PAGE_SIZE = 10;
+      var shownMaps = Math.min(MAP_PAGE_SIZE, maps.length);
+      var shownMatches = Math.min(MATCH_PAGE_SIZE, matches.length);
+
+      function mapRowHtml(m) {
+        var p1k = toNum(m.p1_kills);
+        var p1d = toNum(m.p1_deaths);
+        var p2k = toNum(m.p2_kills);
+        var p2d = toNum(m.p2_deaths);
+        var kd1 = fmtKd(p1k, p1d);
+        var kd2 = fmtKd(p2k, p2d);
+        var diff = p1k - p2k;
+        var diffText = (diff > 0 ? '+' : '') + diff;
+        var edgeText;
+        var edgeCol;
+        if (diff === 0) {
+          edgeText = 'Even';
+          edgeCol = 'var(--muted)';
+        } else if (diff > 0) {
+          edgeText = escHtml(P1);
+          edgeCol = 'var(--accent)';
+        } else {
+          edgeText = escHtml(P2);
+          edgeCol = 'var(--accent2)';
+        }
+        return '<tr>' +
+          '<td class="num" style="color:' + (Number(kd1) >= Number(kd2) ? 'var(--green)' : 'var(--text)') + ';font-weight:600">' +
+            fmtInt(p1k) + '/' + fmtInt(p1d) + ' (' + kd1 + ')</td>' +
+          '<td class="h2h-map-cell"><a href="/map/' + encodeURIComponent(m.map) + '" style="color:var(--text);font-weight:600;">' + escHtml(m.map) + '</a>' +
+            '<div style="font-size:.72rem;color:var(--muted)">' + fmtInt(m.games) + ' game' + (toNum(m.games) === 1 ? '' : 's') + '</div></td>' +
+          '<td class="num" style="color:' + (Number(kd2) >= Number(kd1) ? 'var(--green)' : 'var(--text)') + ';font-weight:600">' +
+            fmtInt(p2k) + '/' + fmtInt(p2d) + ' (' + kd2 + ')</td>' +
+          '<td class="num" style="color:' + edgeCol + ';font-weight:600;">' + edgeText + ' ' +
+            '<span style="color:' + (diff >= 0 ? 'var(--accent)' : 'var(--accent2)') + '">(' + diffText + ')</span></td>' +
+          '</tr>';
+      }
+
+      function matchRowHtml(m) {
+        var p1k = toNum(m.p1_kills);
+        var p1d = toNum(m.p1_deaths);
+        var p2k = toNum(m.p2_kills);
+        var p2d = toNum(m.p2_deaths);
+        var kd1 = fmtKd(p1k, p1d);
+        var kd2 = fmtKd(p2k, p2d);
+        var acc1 = fmtPct(m.p1_acc);
+        var acc2 = fmtPct(m.p2_acc);
+        var diff = p1k - p2k;
+        var resultCls = 'h2h-tie';
+        var resultTxt = 'Tie';
+        if (diff > 0) {
+          resultCls = 'h2h-win';
+          resultTxt = P1;
+        } else if (diff < 0) {
+          resultCls = 'h2h-loss';
+          resultTxt = P2;
+        }
+        var score = (toNum(m.t1_rounds) || toNum(m.t2_rounds))
+          ? (fmtInt(m.t1_rounds) + '-' + fmtInt(m.t2_rounds))
+          : '-';
+        return '<tr>' +
+          '<td style="white-space:nowrap;">' + fmtDate(m.played_at) + '</td>' +
+          '<td class="h2h-match-cell"><a href="/replay/' + encodeURIComponent(m.path) + '" style="font-weight:600;color:var(--text);">' + escHtml(m.map) + '</a>' +
+            '<div style="font-size:.72rem;color:var(--muted)">Score ' + score + '</div></td>' +
+          '<td class="num" style="color:' + (Number(kd1) >= 1 ? 'var(--green)' : 'var(--text)') + ';font-weight:600">' +
+            fmtInt(p1k) + '/' + fmtInt(p1d) + ' (' + kd1 + ')' +
+            '<div style="font-size:.72rem;color:var(--muted)">Acc ' + acc1 + ' • Dmg ' + fmtInt(m.p1_damage) + '</div></td>' +
+          '<td class="num"><span class="h2h-result-badge ' + resultCls + '">' + escHtml(resultTxt) + '</span>' +
+            '<div style="font-size:.72rem;color:' + (diff >= 0 ? 'var(--accent)' : 'var(--accent2)') + ';margin-top:.2rem;">' +
+            (diff > 0 ? '+' : '') + diff + ' diff</div></td>' +
+          '<td class="num" style="color:' + (Number(kd2) >= 1 ? 'var(--green)' : 'var(--text)') + ';font-weight:600">' +
+            fmtInt(p2k) + '/' + fmtInt(p2d) + ' (' + kd2 + ')' +
+            '<div style="font-size:.72rem;color:var(--muted)">Acc ' + acc2 + ' • Dmg ' + fmtInt(m.p2_damage) + '</div></td>' +
+          '<td class="num">' + fmtDuration(m.duration) + '</td>' +
+          '</tr>';
+      }
+
+      function renderMapRows() {
+        if (!maps.length) {
+          mapBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1rem;">No shared maps.</td></tr>';
+          mapMoreBtn.style.display = 'none';
+          return;
+        }
+        mapBody.innerHTML = maps.slice(0, shownMaps).map(mapRowHtml).join('');
+        mapMoreBtn.style.display = 'inline-flex';
+        mapMoreBtn.disabled = shownMaps >= maps.length;
+        mapMoreBtn.textContent = 'Show More (' + MAP_PAGE_SIZE + ')';
+      }
+
+      function renderMatchRows() {
+        if (!matches.length) {
+          matchBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1rem;">No shared matches found.</td></tr>';
+          matchMoreBtn.style.display = 'none';
+          return;
+        }
+        matchBody.innerHTML = matches.slice(0, shownMatches).map(matchRowHtml).join('');
+        matchMoreBtn.style.display = 'inline-flex';
+        matchMoreBtn.disabled = shownMatches >= matches.length;
+        matchMoreBtn.textContent = 'Show More (' + MATCH_PAGE_SIZE + ')';
+      }
+
+      mapMoreBtn.onclick = function() {
+        shownMaps = Math.min(shownMaps + MAP_PAGE_SIZE, maps.length);
+        renderMapRows();
+      };
+
+      matchMoreBtn.onclick = function() {
+        shownMatches = Math.min(shownMatches + MATCH_PAGE_SIZE, matches.length);
+        renderMatchRows();
+      };
+
+      function samePair(a, b, c, d2) {
+        var a1 = String(a || '').toLowerCase();
+        var b1 = String(b || '').toLowerCase();
+        var c1 = String(c || '').toLowerCase();
+        var d1 = String(d2 || '').toLowerCase();
+        return (a1 === c1 && b1 === d1) || (a1 === d1 && b1 === c1);
+      }
+
+      function loadRivalries() {
+        fetch('/api/h2h/rivalries?period=' + encodeURIComponent(activePeriod) + '&limit=20')
+          .then(function(r) { return r.json(); })
+          .then(function(rows) {
+            var body = document.getElementById('h2hRivalryBody');
+            if (!rows || !rows.length) {
+              body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1.2rem;">No rivalry data.</td></tr>';
+              return;
+            }
+            body.innerHTML = rows.map(function(row, idx) {
+              var pairLabel = '<a href="/h2h?p1=' + encodeURIComponent(row.p1) + '&p2=' + encodeURIComponent(row.p2) + '&period=' + encodeURIComponent(activePeriod) + '" style="color:var(--text);font-weight:600;">' +
+                              escHtml(row.p1) + ' vs ' + escHtml(row.p2) + '</a>';
+              var active = samePair(row.p1, row.p2, P1, P2);
+              var activeStyle = active ? ' style="background:rgba(91,141,238,.12);"' : '';
+              return '<tr' + activeStyle + '>' +
+                '<td class="num">' + (idx + 1) + '</td>' +
+                '<td>' + pairLabel + '</td>' +
+                '<td class="num">' + fmtInt(row.encounters) + '</td>' +
+                '<td class="num">' + fmtPct(row.balance_score) + '</td>' +
+                '<td class="num">' + fmtOne(row.rivalry_index) + '</td>' +
+              '</tr>';
+            }).join('');
+          })
+          .catch(function() {
+            var body = document.getElementById('h2hRivalryBody');
+            body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--accent2);padding:1.2rem;">Failed to load rivalries.</td></tr>';
+          });
+      }
+
+      renderMapRows();
+      renderMatchRows();
+      loadRivalries();
+    })
+    .catch(function() {
+      var msg3 = '<tr><td colspan="3" style="text-align:center;color:var(--accent2);padding:1rem;">Failed to load.</td></tr>';
+      var msg4 = '<tr><td colspan="4" style="text-align:center;color:var(--accent2);padding:1rem;">Failed to load.</td></tr>';
+      var msg6 = '<tr><td colspan="6" style="text-align:center;color:var(--accent2);padding:1rem;">Failed to load.</td></tr>';
+      document.getElementById('h2hCompareBody').innerHTML = msg3;
+      document.getElementById('h2hWeaponBody').innerHTML = msg3;
+      document.getElementById('h2hLocBody').innerHTML = msg3;
+      document.getElementById('h2hMapBody').innerHTML = msg4;
+      document.getElementById('h2hMatchBody').innerHTML = msg6;
+      document.getElementById('h2hRivalryBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--accent2);padding:1rem;">Failed to load.</td></tr>';
+      document.getElementById('h2hMapLoadMore').style.display = 'none';
+      document.getElementById('h2hMatchLoadMore').style.display = 'none';
+    });
+  }
+
+  if (periodSelect) {
+    periodSelect.addEventListener('change', function() {
+      fetchAndRender(this.value);
+    });
+  }
+  fetchAndRender(activePeriod);
+})();
+</script>
+{% endif %}
+{% endblock %}

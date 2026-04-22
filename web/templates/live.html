@@ -1,0 +1,971 @@
+{% extends "base.html" %}
+{% block title %}AQ2 Live{% endblock %}
+
+{% block content %}
+<style>
+  .live-controls { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:1rem; }
+  .live-controls input, .live-controls select {
+    background:var(--surface); color:var(--text); border:1px solid var(--border);
+    border-radius:var(--radius); padding:.32rem .55rem; font-size:.84rem;
+  }
+  .live-controls button {
+    background:var(--surface); color:var(--text); border:1px solid var(--border);
+    border-radius:var(--radius); padding:.35rem .8rem; font-size:.84rem; cursor:pointer;
+  }
+  .live-controls button:hover { background:var(--border); }
+  .live-controls button.is-on  { background:#3a5a8a; border-color:#5b8dee; }
+  .live-controls .preset { padding:.2rem .55rem; font-size:.78rem; }
+
+  .live-status {
+    display:inline-flex; align-items:center; gap:.35rem;
+    font-size:.8rem; color:var(--muted);
+  }
+  .live-status .dot {
+    width:.55rem; height:.55rem; border-radius:50%;
+    background:#444; box-shadow:0 0 6px transparent;
+  }
+  .live-status.is-live .dot   { background:#62d96b; box-shadow:0 0 8px #62d96b; animation:liveBlink 1.4s infinite; }
+  .live-status.is-warm .dot   { background:#e6c34d; box-shadow:0 0 6px #e6c34d; }
+  .live-status.is-error .dot  { background:#ff5d6c; box-shadow:0 0 8px #ff5d6c; }
+  @keyframes liveBlink { 50% { opacity:.45; } }
+
+  .scoreboard {
+    display:grid; grid-template-columns:1fr auto 1fr;
+    gap:1.2rem; align-items:center;
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:.85rem 1.2rem; margin-bottom:.8rem;
+  }
+  .scoreboard .team { display:flex; flex-direction:column; gap:.15rem; min-width:0; }
+  .scoreboard .team.t1 { align-items:flex-start; color:#e85d5d; }
+  .scoreboard .team.t2 { align-items:flex-end;   color:#5b8dee; }
+  .scoreboard .team .label { font-weight:800; font-size:1.05rem; letter-spacing:.02em; line-height:1.1; }
+  .scoreboard .team .frags {
+    font-size:.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:.06em;
+  }
+  .scoreboard .team .frags b { color:var(--text); font-weight:700; margin-left:.2rem; }
+  .scoreboard .center { text-align:center; min-width:160px; }
+  .scoreboard .map { font-size:.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .scoreboard .scores {
+    font-size:2.1rem; font-weight:900; letter-spacing:.04em; line-height:1.05;
+    font-variant-numeric:tabular-nums;
+  }
+  .scoreboard .scores .sep { color:var(--muted); margin:0 .4rem; }
+  .scoreboard .scores .t1 { color:#e85d5d; }
+  .scoreboard .scores .t2 { color:#5b8dee; }
+  .scoreboard .roundstate {
+    font-size:.7rem; color:var(--muted); margin-top:.15rem;
+    text-transform:uppercase; letter-spacing:.06em;
+  }
+  .scoreboard .roundstate.action { color:#62d96b; }
+  .scoreboard .roundstate.lights, .scoreboard .roundstate.camera { color:#e6c34d; }
+  .scoreboard .meta { font-size:.68rem; color:var(--muted); margin-top:.1rem; }
+
+  /* Weapon icon column */
+  .live-stats-table td.wpn { text-align:center; width:34px; padding-right:.2rem; }
+  .live-stats-table td.wpn img {
+    height:18px; width:auto; max-width:30px; image-rendering:pixelated;
+    vertical-align:middle; opacity:.95;
+  }
+
+  .live-stats-table { width:100%; font-size:.82rem; border-collapse:collapse; }
+  .live-stats-table th, .live-stats-table td { padding:.32rem .5rem; }
+  .live-stats-table th { color:var(--muted); font-weight:600; text-align:right; }
+  .live-stats-table td { text-align:right; }
+  .live-stats-table th.name, .live-stats-table td.name { text-align:left; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .live-stats-table tr.team-1 td.name { color:#e85d5d; }
+  .live-stats-table tr.team-2 td.name { color:#5b8dee; }
+  .live-stats-table tr.team-header td {
+    padding:.45rem .5rem .25rem;
+    font-weight:700; font-size:.83rem; text-transform:none;
+    border-top:1px solid rgba(255,255,255,.08);
+  }
+  .live-stats-table tr.team-header.t1 td { color:#e85d5d; }
+  .live-stats-table tr.team-header.t2 td { color:#5b8dee; }
+  .live-stats-table tr.team-header td .score { color:var(--muted); font-weight:500; margin-left:.4rem; font-size:.78rem; }
+
+  .kill-feed-live {
+    max-height:340px; overflow-y:auto; font-size:.85rem; line-height:1.55;
+  }
+  .kill-feed-live .kf-row { padding:.18rem 0; opacity:0; animation:kfFade .35s forwards; }
+  .kill-feed-live .kf-row.tk { color:#ffaa55; }
+  .kill-feed-live .kf-row.suicide { color:#9a9a9a; }
+  .kill-feed-live .killer { font-weight:700; }
+  .kill-feed-live .victim { font-weight:600; }
+  .kill-feed-live .t1 { color:#e85d5d; }
+  .kill-feed-live .t2 { color:#5b8dee; }
+  .kill-feed-live .weapon { color:var(--muted); margin:0 .35rem; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; }
+  .kill-feed-live .loc { color:var(--muted); font-size:.75rem; margin-left:.25rem; }
+  @keyframes kfFade { to { opacity:1; } }
+
+  .chat-feed { max-height:200px; overflow-y:auto; font-size:.82rem; line-height:1.5; }
+  .chat-feed .chat-row { padding:.1rem 0; }
+  .chat-feed .chat-row .who { font-weight:600; margin-right:.25rem; }
+  .chat-feed .chat-row.team { color:#9bd49b; }
+  .chat-feed .chat-row.system { color:var(--muted); font-style:italic; }
+
+  .canvas-wrap-live {
+    position:relative; width:100%; max-width:1100px; margin-bottom:.7rem;
+    background:#0b0e16; border-radius:var(--radius); overflow:hidden;
+    border:1px solid var(--border);
+  }
+  .canvas-wrap-live canvas { display:block; width:100%; height:600px; }
+  .canvas-overlay {
+    position:absolute; top:.55rem; right:.6rem; display:flex; gap:.4rem;
+    background:rgba(0,0,0,.55); padding:.3rem .55rem; border-radius:var(--radius);
+    font-size:.75rem; color:var(--muted);
+  }
+
+  .live-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:1rem; }
+  @media (max-width:980px) { .live-grid { grid-template-columns:1fr; } }
+</style>
+
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:.8rem;flex-wrap:wrap;">
+  <h1 style="font-size:1.3rem;margin:0;">📺 Live Viewer</h1>
+  <span class="live-status" id="liveStatus"><span class="dot"></span><span class="text">disconnected</span></span>
+  <a class="back-link" href="/" style="margin-left:auto;margin-bottom:0;">← Back</a>
+</div>
+
+<!-- hidden inputs keep the JS connect() logic unchanged -->
+<input type="hidden" id="liveHost"     value="{{ preset_host }}">
+<input type="hidden" id="livePort"     value="{{ preset_ports[0] }}">
+<input type="hidden" id="livePassword" value="{{ preset_password }}">
+<button id="btnConnect"    style="display:none;"></button>
+<button id="btnDisconnect" style="display:none;"></button>
+
+<div id="liveError" style="display:none;background:#3a1f1f;color:#ffb4b4;border:1px solid #6e3434;
+                          border-radius:var(--radius);padding:.55rem .75rem;margin-bottom:.8rem;font-size:.82rem;"></div>
+
+<div class="scoreboard" id="scoreboard">
+  <div class="team t1">
+    <span class="label" id="t1Name">Team 1</span>
+    <span class="frags">Frags <b id="t1Frags">0</b></span>
+  </div>
+  <div class="center">
+    <div class="map" id="mapName">—</div>
+    <div class="scores">
+      <span class="t1" id="t1Rounds">0</span><span class="sep">:</span><span class="t2" id="t2Rounds">0</span>
+    </div>
+    <div class="roundstate" id="roundState">idle</div>
+    <div class="meta">tied: <span id="roundTies">0</span> · <span id="durationLabel">0:00</span></div>
+  </div>
+  <div class="team t2">
+    <span class="label" id="t2Name">Team 2</span>
+    <span class="frags">Frags <b id="t2Frags">0</b></span>
+  </div>
+</div>
+
+<div class="live-grid">
+  <div>
+    <div class="canvas-wrap-live" id="liveCanvasWrap">
+      <canvas id="liveCanvas" width="1024" height="600"></canvas>
+      <!-- 3D iframe — hidden until toggle -->
+      <iframe id="live3dFrame" style="display:none;position:absolute;inset:0;width:100%;height:100%;border:none;" allowfullscreen></iframe>
+      <div class="canvas-overlay">
+        <button id="btnWireframe" style="background:transparent;color:inherit;border:1px solid #555;border-radius:4px;padding:.15rem .5rem;cursor:pointer;font-size:.72rem;">🗂 Wire</button>
+        <button id="btnTopview"   style="background:transparent;color:inherit;border:1px solid #555;border-radius:4px;padding:.15rem .5rem;cursor:pointer;font-size:.72rem;">🗺 Map</button>
+        <button id="btn3D"        style="background:transparent;color:inherit;border:1px solid #555;border-radius:4px;padding:.15rem .5rem;cursor:pointer;font-size:.72rem;">🎮 3D</button>
+      </div>
+    </div>
+
+    <div class="card" style="padding:.65rem .85rem;">
+      <h2 style="margin-bottom:.5rem;">Player Stats</h2>
+      <div style="overflow-x:auto;"><table class="live-stats-table" id="liveStats">
+        <thead><tr>
+          <th class="name">Player</th>
+          <th title="Current health / armor" style="min-width:75px;">HP</th>
+          <th title="Currently held weapon" style="text-align:center;">Wpn</th>
+          <th title="Ammo: clip / reserve" style="text-align:center;">Ammo</th>
+          <th title="Current equipment items" style="text-align:left;">Items</th>
+          <th>K</th><th>D</th>
+          <th title="Team kills (not counted in score)">TK</th>
+          <th>K:D</th>
+          <th title="Confirmed hits">Hits</th>
+          <th title="Shot accuracy">Acc%</th>
+          <th title="Inferred damage dealt">DMG</th>
+          <th title="Best kill streak this match">Streak</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <div id="specPanel" style="display:none;margin-top:.55rem;padding:.3rem .25rem;
+                                   font-size:.78rem;color:var(--muted);
+                                   border-top:1px solid var(--border);"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card" style="padding:.65rem .85rem;margin-bottom:1rem;">
+      <h2 style="margin-bottom:.5rem;">Kill Feed</h2>
+      <div class="kill-feed-live" id="killFeed"></div>
+    </div>
+    <div class="card" style="padding:.65rem .85rem;">
+      <h2 style="margin-bottom:.5rem;">Chat / Round Log</h2>
+      <div class="chat-feed" id="chatFeed"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const TEAM_COLOR = { 1: '#e85d5d', 2: '#5b8dee' };
+  const KILL_FEED_MAX = 80;
+  const CHAT_FEED_MAX = 80;
+
+  const els = {
+    host:        document.getElementById('liveHost'),
+    port:        document.getElementById('livePort'),
+    password:    document.getElementById('livePassword'),
+    btnConnect:  document.getElementById('btnConnect'),
+    btnDisconn:  document.getElementById('btnDisconnect'),
+    btnWire:     document.getElementById('btnWireframe'),
+    btnTop:      document.getElementById('btnTopview'),
+    btn3D:       document.getElementById('btn3D'),
+    frame3D:     document.getElementById('live3dFrame'),
+    canvas:      document.getElementById('liveCanvas'),
+    status:      document.getElementById('liveStatus'),
+    errorBox:    document.getElementById('liveError'),
+    map:         document.getElementById('mapName'),
+    t1Frags:     document.getElementById('t1Frags'),
+    t2Frags:     document.getElementById('t2Frags'),
+    t1Rounds:    document.getElementById('t1Rounds'),
+    t2Rounds:    document.getElementById('t2Rounds'),
+    roundTies:   document.getElementById('roundTies'),
+    duration:    document.getElementById('durationLabel'),
+    roundState:  document.getElementById('roundState'),
+    statsTable:  document.querySelector('#liveStats tbody'),
+    specPanel:   document.getElementById('specPanel'),
+    killFeed:    document.getElementById('killFeed'),
+    chatFeed:    document.getElementById('chatFeed'),
+  };
+
+  let evtSource = null;
+  let lastSnapshot = null;
+  let geoCache = {};        // mapName → geo
+  let topviewCache = {};    // mapName → {img, params} (img is a <canvas>)
+  let currentMapGeo = null;
+  let currentTopview = null;
+  let showWireframe = false;
+  let showTopview = true;
+  let killPositions = [];   // [{x,y,frame,...}]
+  let seenKills = new Set();
+  let seenChat = new Set();
+
+  // ── interpolation state (mirrors replay.html lerpFrame) ─────────────────────
+  // We buffer the last two received frames and lerp between them based on the
+  // wall-clock time elapsed since `curFrameArrival`. This gives smooth 60+ fps
+  // playback even though the GTV server only sends 10 frames/second.
+  let prevFrame        = null;       // older frame (interp source)
+  let curFrame         = null;       // newer frame (interp target)
+  let curFrameArrival  = 0;          // performance.now() when curFrame arrived
+  let prevFrameArrival = 0;
+  let frameIntervalMs  = 100;        // smoothed inter-arrival (Q2 sv_fps 10 → 100 ms)
+  let rafHandle        = null;
+
+  // Persistent accumulated-bounds object for the no-BSP fallback projection.
+  // Grows to encompass all observed player positions; _live flag tells
+  // getReplayBounds() to skip the WeakMap cache and recompute each call.
+  const _liveBoundsObj = { _live: true, frames: [] };
+
+  // ── status helpers ──────────────────────────────────────────────────────────
+  function setStatus(kind, msg) {
+    els.status.classList.remove('is-live', 'is-warm', 'is-error');
+    if (kind === 'live')  els.status.classList.add('is-live');
+    if (kind === 'warm')  els.status.classList.add('is-warm');
+    if (kind === 'error') els.status.classList.add('is-error');
+    els.status.querySelector('.text').textContent = msg;
+  }
+
+  function showError(msg) {
+    els.errorBox.style.display = 'block';
+    els.errorBox.textContent = msg;
+  }
+  function clearError() {
+    els.errorBox.style.display = 'none';
+    els.errorBox.textContent = '';
+  }
+
+  // ── connection lifecycle ────────────────────────────────────────────────────
+  function connect() {
+    disconnect(true);
+    clearError();
+
+    const host = els.host.value.trim();
+    const port = els.port.value.trim();
+    const password = els.password.value;
+    if (!host || !port) return;
+
+    setStatus('warm', 'connecting…');
+    els.btnConnect.style.display = 'none';
+    els.btnDisconn.style.display = '';
+
+    const url = '/api/live/stream?host=' + encodeURIComponent(host) +
+                '&port=' + encodeURIComponent(port) +
+                '&password=' + encodeURIComponent(password);
+
+    const src = new EventSource(url);
+    evtSource = src;
+
+    src.onopen = function () {
+      if (evtSource !== src) return;
+      setStatus('live', 'connected');
+      // Reload 3D iframe with fresh params if currently visible
+      if (show3D) {
+        els.frame3D.setAttribute('data-src', '');  // force reload
+        update3DFrame();
+      }
+    };
+
+    src.onmessage = function (ev) {
+      if (evtSource !== src) return;
+      let snap;
+      try { snap = JSON.parse(ev.data); }
+      catch (_e) { return; }
+      handleSnapshot(snap);
+    };
+
+    src.onerror = function () {
+      if (evtSource !== src) return;   // a stale handler from a closed conn
+      setStatus('error', 'connection lost');
+      try { src.close(); } catch (_e) { /* ignore */ }
+    };
+  }
+
+  function disconnect(silent) {
+    if (evtSource) {
+      try { evtSource.close(); } catch (_e) { /* ignore */ }
+      evtSource = null;
+    }
+    stopDrawLoop();
+    loadedMap = null;             // force map reload on next connect
+    _liveBoundsObj.frames = [];  // clear stale position history from previous session
+    els.btnConnect.style.display = '';
+    els.btnDisconn.style.display = 'none';
+    if (!silent) setStatus('', 'disconnected');
+  }
+
+  els.btnConnect.addEventListener('click', connect);
+  els.btnDisconn.addEventListener('click', function () { disconnect(false); });
+
+  document.querySelectorAll('button.preset').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      els.port.value = btn.dataset.port;
+      connect();
+    });
+  });
+
+  els.btnWire.addEventListener('click', function () {
+    showWireframe = !showWireframe;
+    els.btnWire.classList.toggle('is-on', showWireframe);
+    drawFrame();
+  });
+  els.btnTop.addEventListener('click', function () {
+    showTopview = !showTopview;
+    els.btnTop.classList.toggle('is-on', showTopview);
+    drawFrame();
+  });
+  els.btnTop.classList.add('is-on');
+
+  // ── 3D view toggle ──────────────────────────────────────────────────────────
+  let show3D = false;
+  function update3DFrame() {
+    if (show3D) {
+      const host = els.host.value.trim();
+      const port = els.port.value.trim();
+      const password = els.password.value;
+      if (host && port) {
+        const src = '/live3d?host=' + encodeURIComponent(host) +
+                    '&port=' + encodeURIComponent(port) +
+                    '&password=' + encodeURIComponent(password);
+        // Only reload if src changed (e.g. new connection)
+        if (els.frame3D.src !== location.origin + src && els.frame3D.getAttribute('data-src') !== src) {
+          els.frame3D.setAttribute('data-src', src);
+          els.frame3D.src = src;
+        }
+      }
+      els.frame3D.style.display = '';
+      els.canvas.style.display = 'none';
+    } else {
+      els.frame3D.style.display = 'none';
+      els.canvas.style.display = '';
+    }
+    els.btn3D.classList.toggle('is-on', show3D);
+  }
+  els.btn3D.addEventListener('click', function () {
+    show3D = !show3D;
+    update3DFrame();
+  });
+
+  // ── snapshot handler ────────────────────────────────────────────────────────
+  function handleSnapshot(snap) {
+    if (!snap) return;
+    if (snap.type === 'error') {
+      showError(snap.error || 'unknown stream error');
+      setStatus('error', 'stream error');
+      return;
+    }
+    if (snap.type === 'disconnect') {
+      setStatus('', 'stream closed');
+      disconnect(true);
+      return;
+    }
+    if (snap.type !== 'snapshot') return;
+
+    const prevSnapshot = lastSnapshot;
+    lastSnapshot = snap;
+    setStatus('live', 'live · frame ' + snap.frame_idx);
+    clearError();
+
+    // Map change → reset caches and load fresh BSP geometry + topview SVG.
+    const mapName = (snap.map || '').toString();
+    const mapChanged = (mapName !== loadedMap);
+    if (mapName && mapChanged) {
+      loadMap(mapName);
+    }
+
+    // Roll the interpolation buffer: prev ← cur, cur ← this new snapshot.
+    const now = performance.now();
+    if (mapChanged || !snap.frame || prevSnapshot == null) {
+      // Snap immediately on (re)connect or map change — nothing to interp from.
+      prevFrame        = snap.frame || { t: 0, players: {} };
+      curFrame         = snap.frame || { t: 0, players: {} };
+      prevFrameArrival = now;
+      curFrameArrival  = now;
+    } else {
+      prevFrame        = curFrame || snap.frame;
+      prevFrameArrival = curFrameArrival;
+      curFrame         = snap.frame;
+      curFrameArrival  = now;
+      // Smooth the inter-arrival estimate with a light EMA, clamped to sane range.
+      const dt = Math.max(30, Math.min(400, now - prevFrameArrival));
+      frameIntervalMs = frameIntervalMs * 0.8 + dt * 0.2;
+    }
+
+    if (snap.round_end) killPositions = [];
+
+    // Accumulate player positions for the no-BSP fallback projection.
+    if (snap.frame && snap.frame.players) {
+      _liveBoundsObj.frames.push(snap.frame);
+      if (_liveBoundsObj.frames.length > 100) _liveBoundsObj.frames.shift();
+    }
+
+    updateScoreboard(snap);
+    updateStatsTable(snap);
+    appendNewKills(snap);
+    appendNewChat(snap);
+    startDrawLoop();
+  }
+
+  // ── interpolated draw loop (mirrors replay.html's animLoop) ─────────────────
+  function startDrawLoop() {
+    if (rafHandle != null) return;
+    const tick = function () {
+      rafHandle = null;
+      if (!lastSnapshot) return;
+      drawFrame();
+      rafHandle = requestAnimationFrame(tick);
+    };
+    rafHandle = requestAnimationFrame(tick);
+  }
+
+  function stopDrawLoop() {
+    if (rafHandle != null) {
+      cancelAnimationFrame(rafHandle);
+      rafHandle = null;
+    }
+  }
+
+  function lerpFrame(frameA, frameB, alpha) {
+    if (!frameB || alpha <= 0) return frameA || { t: 0, players: {} };
+    if (!frameA) return frameB;
+    const players = {};
+    const A = frameA.players || {};
+    const B = frameB.players || {};
+    for (const [num, pa] of Object.entries(A)) {
+      const pb = B[num];
+      if (!pb) { players[num] = pa; continue; }
+      let da = ((pb.a - pa.a) % 360 + 360) % 360;
+      if (da > 180) da -= 360;
+      players[num] = {
+        x: pa.x + (pb.x - pa.x) * alpha,
+        y: pa.y + (pb.y - pa.y) * alpha,
+        z: (pa.z || 0) + ((pb.z || 0) - (pa.z || 0)) * alpha,
+        a: pa.a + da * alpha,
+        w: pb.w != null ? pb.w : pa.w,
+      };
+    }
+    // Newly-appeared players in B (joined between frames) snap in without lerp.
+    for (const [num, pb] of Object.entries(B)) {
+      if (!(num in A)) players[num] = pb;
+    }
+    return { players };
+  }
+
+  function drawFrame() {
+    if (!lastSnapshot) return;
+    const fi = Math.max(30, frameIntervalMs);
+    // Clamp alpha to [0,1] — we never extrapolate past the latest received frame.
+    let alpha = (performance.now() - curFrameArrival) / fi;
+    if (alpha < 0) alpha = 0;
+    if (alpha > 1) alpha = 1;
+    const frame = lerpFrame(prevFrame, curFrame, alpha);
+    frame.t = (curFrame && curFrame.t != null) ? curFrame.t : lastSnapshot.frame_idx;
+
+    const tv = (showTopview && currentTopview) ? currentTopview : null;
+    // Pass _liveBoundsObj so getReplayBounds() can compute a proper projection
+    // from accumulated live positions when no BSP geo is available.
+    const replayDataLike = Object.assign(_liveBoundsObj, {
+      player_names:       lastSnapshot.player_names || {},
+      player_teams:       lastSnapshot.player_teams || {},
+      ghost_clients:      lastSnapshot.ghost_clients || [],
+      round_start_frames: [],
+    });
+    drawReplay(
+      els.canvas,
+      currentMapGeo,
+      frame,
+      replayDataLike,
+      null,
+      tv,
+      killPositions,
+      showWireframe
+    );
+  }
+
+  // ── map / geometry / topview loader ─────────────────────────────────────────
+  let loadedMap = null;
+
+  function loadMap(name) {
+    loadedMap = name;
+    killPositions = [];
+    seenKills.clear();
+    currentMapGeo = geoCache[name] || null;
+    currentTopview = topviewCache[name] || null;
+
+    if (!geoCache[name]) {
+      fetch('/api/map/' + encodeURIComponent(name) + '/geo')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (geo) {
+          if (!geo || loadedMap !== name) return;
+          geoCache[name] = geo;
+          currentMapGeo = geo;
+          els.btnWire.style.display = '';
+          drawFrame();
+        })
+        .catch(function () { /* ignore */ });
+    } else {
+      els.btnWire.style.display = '';
+    }
+
+    if (!topviewCache[name]) {
+      fetch('/api/map/' + encodeURIComponent(name) + '/topview.json')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (params) {
+          if (!params || loadedMap !== name) return;
+          return fetch('/api/map/' + encodeURIComponent(name) + '/topview.svg')
+            .then(function (r) { return r.ok ? r.blob() : null; })
+            .then(function (blob) {
+              if (!blob || loadedMap !== name) return;
+              return rasterizeSvg(blob).then(function (canvas) {
+                if (!canvas || loadedMap !== name) return;
+                const tv = { img: canvas, params: params };
+                topviewCache[name] = tv;
+                currentTopview = tv;
+                els.btnTop.style.display = '';
+                drawFrame();
+              });
+            });
+        })
+        .catch(function () { /* ignore */ });
+    } else {
+      els.btnTop.style.display = '';
+    }
+  }
+
+  function rasterizeSvg(blob) {
+    return new Promise(function (resolve) {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = function () {
+        const w = 1024;
+        const aspect = img.naturalHeight / Math.max(1, img.naturalWidth);
+        const h = Math.round(w * (aspect || (600 / 1024)));
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        resolve(c);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    });
+  }
+
+
+  // ── scoreboard ──────────────────────────────────────────────────────────────
+  function updateScoreboard(snap) {
+    els.map.textContent = snap.map || '—';
+    const ts = snap.team_scores || {};
+    const rw = snap.round_wins || {};
+    els.t1Rounds.textContent = rw['1'] != null ? rw['1'] : 0;
+    els.t2Rounds.textContent = rw['2'] != null ? rw['2'] : 0;
+    // Team frags = sum of individual kill_counts for each team's players.
+    const kc     = snap.kill_counts   || {};
+    const pt     = snap.player_teams  || {};
+    let t1frags = 0, t2frags = 0;
+    for (const [name, t] of Object.entries(pt)) {
+      const k = kc[name] || 0;
+      if (t === 1) t1frags += k;
+      else if (t === 2) t2frags += k;
+    }
+    els.t1Frags.textContent = t1frags;
+    els.t2Frags.textContent = t2frags;
+    els.roundTies.textContent = snap.round_ties || 0;
+    els.duration.textContent = formatTime(snap.duration_s || 0);
+    const rs = snap.round_state || 'idle';
+    els.roundState.textContent = rs.toUpperCase();
+    els.roundState.classList.remove('action', 'lights', 'camera');
+    if (rs === 'action' || rs === 'lights' || rs === 'camera') {
+      els.roundState.classList.add(rs);
+    }
+  }
+
+  function formatTime(secs) {
+    const s = Math.max(0, Math.floor(secs));
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+
+  // ── stats table ─────────────────────────────────────────────────────────────
+  // Map vwep model stems (from snapshot.weapon_models) to AQ2 HUD pic names.
+  // The pics live at dlserver `pics/<name>.pcx` and are served as PNG via
+  // /api/pics/<name>.
+  const LIVE_ITEMS = [
+    { bit:  1, icon: 'i_jacketarmor', title: 'Kevlar Vest',   label: 'KV'  },
+    { bit:  2, icon: 'p_rebreather',  title: 'Kevlar Helmet', label: 'KH'  },
+    { bit:  4, icon: 'p_silencer',    title: 'Silencer',      label: 'SIL' },
+    { bit:  8, icon: 'p_bandolier',   title: 'Bandolier',     label: 'BND' },
+    { bit: 16, icon: 'p_laser',       title: 'Laser Sight',   label: 'LAS' },
+  ];
+
+  function liveItemIcons(itemBits) {
+    if (!itemBits) return '<span style="color:var(--muted);">—</span>';
+    const imgs = LIVE_ITEMS.filter(it => itemBits & it.bit).map(it =>
+      '<img src="/api/pics/' + it.icon + '" alt="' + it.label + '" title="' + it.title + '" '
+      + 'style="height:14px;width:auto;image-rendering:pixelated;vertical-align:middle;margin-right:1px;" '
+      + 'onerror="this.outerHTML=\'<span style=&quot;font-size:.65rem;color:var(--muted);margin-right:2px;&quot;>' + it.label + '</span>\'">'
+    ).join('');
+    return imgs || '<span style="color:var(--muted);">—</span>';
+  }
+
+  const WEAPON_PIC = {
+    'w_mk23':    'w_mk23',
+    'w_mp5':     'w_mp5',
+    'w_m4':      'w_m4',
+    'w_super90': 'w_super90',
+    'w_cannon':  'w_cannon',
+    'w_sniper':  'w_sniper',
+    'w_akimbo':  'w_akimbo',
+    'w_knife':   'w_knife',
+    'a_m61frag': 'a_m61frag',
+  };
+  const WEAPON_LABEL = {
+    'w_mk23':    'MK23',
+    'w_mp5':     'MP5',
+    'w_m4':      'M4',
+    'w_super90': 'M3',
+    'w_cannon':  'HC',
+    'w_sniper':  'SR',
+    'w_akimbo':  'Dual',
+    'w_knife':   'Knife',
+    'a_m61frag': 'Grenade',
+  };
+
+  function updateStatsTable(snap) {
+    const namesDict = snap.player_names || {};
+    const teams  = snap.player_teams || {};
+    const k      = snap.kill_counts  || {};
+    const d      = snap.death_counts || {};
+    const tk     = snap.team_kill_counts || {};
+    const h      = snap.hit_counts   || {};
+    const acc    = snap.accuracy     || {};
+    const dmg    = snap.damage_dealt || {};
+    const shots  = snap.shots_fired  || {};
+    const streak = snap.best_streak  || {};
+    const rw     = snap.round_wins   || {};
+    const ts     = snap.team_scores  || {};
+    const wmodels   = snap.weapon_models || {};
+    const framePlrs = (snap.frame && snap.frame.players) || {};
+
+    // name → vwep stem, health, armor, ammo, clip from current frame
+    const wpnByName    = {};
+    const healthByName = {};
+    const armorByName  = {};
+    const itemsByName  = {};
+    const ammoByName   = {};
+    const clipByName   = {};
+    for (const [num, name] of Object.entries(namesDict)) {
+      const ps = framePlrs[num];
+      if (!ps) continue;
+      if (ps.w != null) {
+        const stem = wmodels[String(ps.w)];
+        if (stem) wpnByName[name] = stem;
+      }
+      if (ps.h  != null && ps.h  >= 0) healthByName[name] = ps.h;
+      if (ps.ar != null && ps.ar >= 0) armorByName[name]  = ps.ar;
+      if (ps.it) itemsByName[name] = ps.it;
+      if (ps.am != null && ps.am >= 0) ammoByName[name]   = ps.am;
+      if (ps.cl != null && ps.cl >= 0) clipByName[name]   = ps.cl;
+    }
+
+    // Dedupe by display name (a single player can own multiple cnums across slot re-use).
+    const players = [];
+    const seen = new Set();
+    for (const n of Object.values(namesDict)) {
+      if (!n || n === '[MVDSPEC]' || seen.has(n)) continue;
+      seen.add(n);
+      players.push(n);
+    }
+
+    // Reverse map: display name → clientnum string (for frame-presence check).
+    const nameToNum = {};
+    for (const [num, name] of Object.entries(namesDict)) nameToNum[name] = num;
+
+    // Spectator heuristic: zero activity AND not in current frame AND no team.
+    // We must check frame presence so mid-round joins don't mark everyone as
+    // spectators before any kill/shot data has been accumulated.
+    // Build a set of clientnums seen in the last ~50 received frames so players
+    // who are briefly between rounds (no current frame entry, no history yet)
+    // aren't mis-classified as spectators.
+    const recentNums = new Set();
+    const recentFrames = _liveBoundsObj.frames;
+    const checkFrom = Math.max(0, recentFrames.length - 50);
+    for (let _ri = checkFrom; _ri < recentFrames.length; _ri++) {
+      for (const numStr of Object.keys(recentFrames[_ri].players || {})) {
+        recentNums.add(numStr);
+      }
+    }
+
+    function isSpectator(n) {
+      if (framePlrs[nameToNum[n]] != null) return false;    // in current frame
+      if (recentNums.has(nameToNum[n])) return false;       // seen recently (between rounds)
+      if ((k[n] || 0) || (shots[n] || 0)) return false;
+      if ((d[n] || 0) || (h[n] || 0) || (dmg[n] || 0) || (tk[n] || 0)) return false;
+      return true;
+    }
+
+    const team1 = [], team2 = [], noTeam = [], specs = [];
+    for (const n of players) {
+      if (isSpectator(n)) { specs.push(n); continue; }
+      const t = teams[n];
+      if      (t === 1) team1.push(n);
+      else if (t === 2) team2.push(n);
+      else               noTeam.push(n);
+    }
+    const byKills = (a, b) => (k[b] || 0) - (k[a] || 0);
+    [team1, team2, noTeam].forEach(g => g.sort(byKills));
+
+    function hpCell(n) {
+      const hp = healthByName[n];
+      const ar = armorByName[n];
+      if (hp == null && ar == null) return '<td style="min-width:75px;"></td>';
+      const pct = hp != null ? Math.max(0, Math.min(100, hp)) : 0;
+      const col = hp == null ? 'rgba(255,255,255,.1)' : (hp > 60 ? '#62d96b' : (hp > 30 ? '#e6c34d' : '#ff5d6c'));
+      const hpTxt = hp != null ? hp : '—';
+      const arHtml = ar != null ? '<span style="font-size:.68rem;color:#8ac4e8;margin-left:.3rem;" title="Armor">🛡' + ar + '</span>' : '';
+      return '<td style="min-width:75px;vertical-align:middle;">' +
+        '<div style="display:flex;align-items:center;gap:.25rem;">' +
+        '<div style="flex:1;height:6px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;">' +
+        '<div style="height:100%;width:' + pct + '%;background:' + col + ';"></div></div>' +
+        '<span style="font-size:.7rem;color:var(--muted);min-width:18px;text-align:right;">' + hpTxt + '</span>' +
+        arHtml +
+        '</div></td>';
+    }
+
+    function wpnCell(n) {
+      const stem = wpnByName[n];
+      if (!stem) return '<td class="wpn"><span style="color:var(--muted);">\u2014</span></td>';
+      const label = WEAPON_LABEL[stem] || stem;
+      return '<td class="wpn"><img src="/api/pics/' + escapeHtml(stem) + '" alt="' + escapeHtml(label) +
+             '" title="' + escapeHtml(label) + '" loading="lazy" ' +
+             'onerror="this.style.display=\'none\';this.insertAdjacentHTML(\'afterend\',\'<span style=&quot;font-size:.72rem;color:var(--muted);&quot;>' + escapeHtml(label) + '</span>\')"></td>';
+    }
+
+    function ammoCell(n) {
+      const am = ammoByName[n];
+      const cl = clipByName[n];
+      if (am == null && cl == null) return '<td style="text-align:center;color:var(--muted);">—</td>';
+      let s = '';
+      if (am != null) s += '<span style="font-size:.75rem;font-weight:600;">' + am + '</span>';
+      if (am != null && cl != null) s += '<span style="color:var(--muted);font-size:.7rem;">/</span>';
+      if (cl != null) s += '<span style="font-size:.72rem;color:var(--muted);">' + cl + '</span>';
+      return '<td style="text-align:center;white-space:nowrap;">' + s + '</td>';
+    }
+
+    function rowHtml(n, tnum) {
+      const kills = k[n] || 0, deaths = d[n] || 0;
+      const kd = deaths === 0 ? (kills > 0 ? '\u221E' : '\u2014') : (kills / deaths).toFixed(2);
+      const accVal = acc[n];
+      let accStr = '\u2014';
+      if (accVal != null) accStr = Math.min(100, accVal).toFixed(1) + '%';
+      else if ((shots[n] || 0) > 0) accStr = Math.min(100, (h[n] || 0) / shots[n] * 100).toFixed(1) + '%';
+      const tkV = tk[n] || 0;
+      const tkCell = tkV > 0 ? '<span style="color:#e8b64d;">' + tkV + '</span>' : '<span style="color:var(--muted);">\u2014</span>';
+      return '<tr class="team-' + (tnum || 0) + '">' +
+        '<td class="name" title="' + escapeHtml(n) + '">' + escapeHtml(n) + '</td>' +
+        hpCell(n) +
+        wpnCell(n) +
+        ammoCell(n) +
+        '<td style="text-align:left;white-space:nowrap;">' + liveItemIcons(itemsByName[n] || 0) + '</td>' +
+        '<td>' + kills + '</td>' +
+        '<td>' + deaths + '</td>' +
+        '<td>' + tkCell + '</td>' +
+        '<td>' + kd + '</td>' +
+        '<td>' + (h[n] || 0) + '</td>' +
+        '<td>' + accStr + '</td>' +
+        '<td>' + (dmg[n] || 0) + '</td>' +
+        '<td>' + (streak[n] || 0) + '</td>' +
+      '</tr>';
+    }
+
+    function teamHeader(tnum, label, score) {
+      return '<tr class="team-header t' + tnum + '"><td colspan="13">● ' +
+        escapeHtml(label) +
+        '<span class="score">' + escapeHtml(score) + '</span></td></tr>';
+    }
+
+    const rows = [];
+    const hasRounds = (rw['1'] || 0) + (rw['2'] || 0) > 0;
+    if (team1.length || team2.length) {
+      const r1 = hasRounds ? ((rw['1'] || 0) + ' rounds won') : ((ts['1'] || 0) + ' kills');
+      const r2 = hasRounds ? ((rw['2'] || 0) + ' rounds won') : ((ts['2'] || 0) + ' kills');
+      rows.push(teamHeader(1, 'Team 1', r1));
+      team1.forEach(n => rows.push(rowHtml(n, 1)));
+      rows.push(teamHeader(2, 'Team 2', r2));
+      team2.forEach(n => rows.push(rowHtml(n, 2)));
+    }
+    if (noTeam.length) {
+      if (team1.length || team2.length) {
+        rows.push('<tr class="team-header"><td colspan="13" style="color:var(--muted);">● Unassigned</td></tr>');
+      }
+      noTeam.forEach(n => rows.push(rowHtml(n, 0)));
+    }
+
+    els.statsTable.innerHTML = rows.join('') ||
+      '<tr><td colspan="13" style="text-align:center;color:var(--muted);padding:.6rem;">Waiting for players…</td></tr>';
+
+    if (specs.length) {
+      els.specPanel.style.display = '';
+      els.specPanel.innerHTML = '\uD83D\uDC41 Spectators: ' +
+        specs.map(n => escapeHtml(n)).join(', ');
+    } else {
+      els.specPanel.style.display = 'none';
+      els.specPanel.innerHTML = '';
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── kill feed ───────────────────────────────────────────────────────────────
+  function appendNewKills(snap) {
+    const kills = snap.kills || [];
+    const teams = snap.player_teams || {};
+    for (const k of kills) {
+      const id = (k.frame || 0) + '|' + (k.killer || '') + '|' + (k.victim || '');
+      if (seenKills.has(id)) continue;
+      seenKills.add(id);
+
+      // Track kill positions for skull markers (best-effort: use victim pos from current frame).
+      const victim = k.victim;
+      const playersFrame = (snap.frame && snap.frame.players) || {};
+      const vNum = lookupCnumByName(snap.player_names, victim);
+      if (vNum != null && playersFrame[vNum]) {
+        killPositions.push({
+          x: playersFrame[vNum].x,
+          y: playersFrame[vNum].y,
+          frame: k.frame,
+          killer: k.killer,
+          victim: victim,
+        });
+        if (killPositions.length > 200) killPositions.splice(0, killPositions.length - 200);
+      }
+
+      const tk = !!k.team_kill;
+      const su = !!k.suicide || (k.killer && k.killer === k.victim);
+      const cls = tk ? 'tk' : (su ? 'suicide' : '');
+      const killerTeam = teams[k.killer] || 0;
+      const victimTeam = teams[k.victim] || 0;
+      const icon = tk ? '🤝' : (su ? '☠' : '⚔');
+      const html =
+        '<div class="kf-row ' + cls + '">' +
+          '<span class="killer t' + killerTeam + '">' + escapeHtml(k.killer || '?') + '</span> ' +
+          '<span style="color:var(--muted);">' + icon + '</span>' +
+          '<span class="weapon">' + escapeHtml(k.weapon || '') + '</span>' +
+          '<span class="victim t' + victimTeam + '">' + escapeHtml(k.victim || '?') + '</span>' +
+          (k.location ? '<span class="loc">[' + escapeHtml(k.location) + ']</span>' : '') +
+        '</div>';
+
+      els.killFeed.insertAdjacentHTML('afterbegin', html);
+    }
+    while (els.killFeed.children.length > KILL_FEED_MAX) {
+      els.killFeed.removeChild(els.killFeed.lastChild);
+    }
+  }
+
+  function lookupCnumByName(names, target) {
+    if (!names || !target) return null;
+    for (const [num, n] of Object.entries(names)) {
+      if (n === target) return num;
+    }
+    return null;
+  }
+
+  // ── chat / round log ────────────────────────────────────────────────────────
+  function appendNewChat(snap) {
+    const events = (snap.chat || []).concat(snap.prints || []);
+    for (const ev of events) {
+      const id = (ev.frame || 0) + '|' + (ev.text || '') + '|' + (ev.who || '') + '|' + (ev.type || '');
+      if (seenChat.has(id)) continue;
+      seenChat.add(id);
+
+      const isSystem = !ev.who || ev.type === 'map_change';
+      const teamChat = ev.team_chat;
+      const cls = teamChat ? 'team' : (isSystem ? 'system' : '');
+      const teamNum = ev.team || 0;
+      let html;
+      if (isSystem) {
+        html = '<div class="chat-row ' + cls + '">' + escapeHtml(ev.text || '') + '</div>';
+      } else {
+        html = '<div class="chat-row ' + cls + '">' +
+                 '<span class="who t' + teamNum + '" style="color:' + (TEAM_COLOR[teamNum] || 'var(--text)') + ';">' +
+                 escapeHtml(ev.who || '') + ':</span>' +
+                 escapeHtml(ev.text || '') +
+               '</div>';
+      }
+      els.chatFeed.insertAdjacentHTML('afterbegin', html);
+    }
+    while (els.chatFeed.children.length > CHAT_FEED_MAX) {
+      els.chatFeed.removeChild(els.chatFeed.lastChild);
+    }
+  }
+
+  // ── URL param override + optional autoconnect ──────────────────────────────
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    const pHost = params.get('host');
+    const pPort = params.get('port');
+    if (pHost) els.host.value = pHost;
+    if (pPort) els.port.value = pPort;
+    if (params.get('autoconnect') === '1' && (pHost || pPort)) {
+      // Small delay so the page is fully rendered before we start the stream.
+      setTimeout(connect, 120);
+    }
+  })();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% set _active = active_stats_page|default('overview') %}
+{% set _show_reindex = show_reindex_button|default(false) %}
+<div class="card stats-header-card">
+  <div class="stats-header-top">
+    <div>
+      <h1 class="stats-title">Stats Hub</h1>
+      <p class="stats-subtitle">Overview first, deep dives one click away.</p>
+    </div>
+    <div class="stats-controls">
+      <label class="stats-control">
+        <span class="help-label" title="Filter all stats pages by game mode.">Mode</span>
+        <select id="modeFilter">
+          <option value="teamplay" selected>Teamplay</option>
+          <option value="team_deathmatch">Team Deathmatch (TDM)</option>
+          <option value="domination">Domination</option>
+          <option value="espionage">Espionage</option>
+          <option value="tourney">Tourney</option>
+          <option value="deathmatch">Deathmatch</option>
+          <option value="jumpmod">Jumpmod</option>
+          <option value="ctf">CTF</option>
+          <option value="team_modes">All Team Modes</option>
+          <option value="dm_modes">All DM Modes</option>
+          <option value="all">All Modes</option>
+        </select>
+      </label>
+      <label class="stats-control">
+        <span class="help-label" title="Filter all stats pages by period.">Period</span>
+        <select id="periodFilter">
+          <option value="this_week">This Week</option>
+          <option value="last_week">Last Week</option>
+          <option value="this_month">This Month</option>
+          <option value="last_month">Last Month</option>
+          <option value="this_year" selected>This Year</option>
+          <option value="last_year">Last Year</option>
+          <option value="all">All Time</option>
+        </select>
+      </label>
+      <span id="statusBadge" class="badge badge-spec" title="Indexer status">loading…</span>
+      {% if _show_reindex %}
+      <button id="rebuildBtn" class="stats-button" type="button">Rebuild Index</button>
+      {% endif %}
+    </div>
+  </div>
+  <div class="stats-subnav">
+    <a href="/stats" class="{% if _active == 'overview' %}active{% endif %}">Overview</a>
+    <a href="/stats/players" class="{% if _active == 'players' %}active{% endif %}">Players</a>
+    <a href="/stats/maps" class="{% if _active == 'maps' %}active{% endif %}">Maps</a>
+    <a href="/stats/activity" class="{% if _active == 'activity' %}active{% endif %}">Activity</a>
+    <a href="/stats/matches" class="{% if _active == 'matches' %}active{% endif %}">Matches</a>
+    <a href="/stats/weapons" class="{% if _active == 'weapons' %}active{% endif %}">Weapons</a>
+    <a href="/stats/analytics" class="{% if _active == 'analytics' %}active{% endif %}">Analytics</a>
+  </div>
+</div>

@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Activity — AQ2{% endblock %}
+
+{% block content %}
+{% set active_stats_page = 'activity' %}
+{% include "_stats_nav.html" %}
+
+<div class="card">
+  <div class="stats-section-head">
+    <h2>Weekly Activity</h2>
+    <div id="weekFilterBadge" style="display:none;align-items:center;gap:.5rem;">
+      <span id="weekFilterText" style="font-size:.74rem;color:var(--muted);"></span>
+      <button id="weekFilterClear" type="button" class="stats-button" style="font-size:.72rem;padding:.1rem .5rem;">Clear</button>
+    </div>
+  </div>
+  <p class="muted-note" style="margin-bottom:.65rem;">
+    Click a bar to filter all stats pages to that week. Weekly match + kill volume.
+  </p>
+  <div id="activityBars" class="activity-bars" style="height:96px;"></div>
+  <div id="activityLegend" class="muted-note" style="margin-top:.5rem;">Loading…</div>
+</div>
+
+<div class="card">
+  <h2 style="font-size:.95rem;margin-bottom:.65rem;">Week-by-Week Breakdown</h2>
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th class="help-label" title="Calendar week (YYYY-WW format).">Week</th>
+          <th class="num help-label" title="Matches played in the week.">Matches</th>
+          <th class="num help-label" title="Total kills recorded in the week.">Kills</th>
+          <th class="num help-label" title="Kills divided by number of matches.">Kills/Match</th>
+        </tr>
+      </thead>
+      <tbody id="activityTableBody">
+        <tr><td colspan="4" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  var S = window.AQ2Stats;
+  if (!S) return;
+
+  var filters    = S.bindFilters();
+  var currentWeek = (new URLSearchParams(window.location.search)).get('week') || '';
+  S.initStatusBadge({ badgeId: 'statusBadge' });
+
+  var barsEl      = document.getElementById('activityBars');
+  var legendEl    = document.getElementById('activityLegend');
+  var tableBody   = document.getElementById('activityTableBody');
+  var weekBadge   = document.getElementById('weekFilterBadge');
+  var weekText    = document.getElementById('weekFilterText');
+  var weekClearBtn = document.getElementById('weekFilterClear');
+
+  function reloadWithWeek(week) {
+    var params = new URLSearchParams(window.location.search);
+    if (week) params.set('week', week);
+    else params.delete('week');
+    var qs = params.toString();
+    window.location.search = qs ? ('?' + qs) : '';
+  }
+
+  if (currentWeek && weekBadge && weekText) {
+    weekBadge.style.display = 'flex';
+    weekText.textContent = 'Filtered to week ' + currentWeek;
+  }
+  if (weekClearBtn) {
+    weekClearBtn.addEventListener('click', function () { reloadWithWeek(''); });
+  }
+
+  S.fetchJson('/api/stats/activity', filters).then(function (rows) {
+    var data = rows || [];
+    if (!data.length) {
+      if (barsEl)    barsEl.innerHTML = '<div class="muted-note">No activity data for this filter.</div>';
+      if (legendEl)  legendEl.textContent = 'No timeline available.';
+      if (tableBody) tableBody.innerHTML = '<tr><td colspan="4" class="center muted-row">No data.</td></tr>';
+      return;
+    }
+
+    // ── Chart ──────────────────────────────────────────────────
+    if (barsEl) {
+      var maxMatches = data.reduce(function (m, r) { return Math.max(m, Number(r.matches || 0)); }, 1);
+      var totalMatches = data.reduce(function (s, r) { return s + Number(r.matches || 0); }, 0);
+
+      barsEl.innerHTML = data.map(function (r) {
+        var h   = Math.max(6, Math.round((Number(r.matches || 0) / maxMatches) * 86));
+        var cls = 'act-bar' + (r.week === currentWeek ? ' act-bar-active' : '');
+        return '<div class="' + cls + '" data-week="' + S.escHtml(r.week || '') + '"' +
+          ' style="height:' + h + 'px;flex:1 0 6px;max-width:22px;"' +
+          ' title="' + S.escHtml(r.week || '') + ': ' + S.fmtNum(r.matches) + ' matches, ' + S.fmtNum(r.kills) + ' kills">' +
+          '</div>';
+      }).join('');
+
+      barsEl.addEventListener('click', function (e) {
+        var bar = e.target && e.target.closest('.act-bar[data-week]');
+        if (!bar) return;
+        var week = String(bar.getAttribute('data-week') || '');
+        reloadWithWeek(week === currentWeek ? '' : week);
+      });
+
+      if (legendEl) {
+        legendEl.textContent = data[0].week + ' → ' + data[data.length - 1].week +
+          '  ·  ' + totalMatches + ' matches total';
+      }
+    }
+
+    // ── Table ──────────────────────────────────────────────────
+    if (tableBody) {
+      tableBody.innerHTML = data.slice().reverse().map(function (r) {
+        var kpm = r.matches ? (Number(r.kills || 0) / Number(r.matches)).toFixed(1) : '—';
+        var active = r.week === currentWeek;
+        return '<tr' + (active ? ' style="background:rgba(91,141,238,.1);"' : '') + '>' +
+          '<td>' + (active ? '<strong>' : '') + S.escHtml(r.week || '—') + (active ? '</strong>' : '') + '</td>' +
+          '<td class="num">' + S.fmtNum(r.matches) + '</td>' +
+          '<td class="num">' + S.fmtNum(r.kills) + '</td>' +
+          '<td class="num">' + kpm + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+  }).catch(function () {
+    if (barsEl)    barsEl.innerHTML = '<div class="muted-note">Failed to load activity chart.</div>';
+    if (legendEl)  legendEl.textContent = 'Failed to load.';
+    if (tableBody) tableBody.innerHTML = '<tr><td colspan="4" class="center muted-row">Failed to load activity data.</td></tr>';
+  });
+})();
+</script>
+{% endblock %}

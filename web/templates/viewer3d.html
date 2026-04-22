@@ -1,0 +1,1237 @@
+{% extends "base.html" %}
+{% block title %}AQ2 3D View — {{ filename }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:.8rem;flex-wrap:wrap">
+  <a class="back-link" href="/replay/{{ filename }}" style="margin-bottom:0">← 2D Replay</a>
+  <a class="back-link" id="downloadLink" href="/download/{{ filename }}"
+     style="margin-bottom:0;color:var(--muted)">⬇ Download</a>
+  <span id="loadStatus" style="color:var(--muted);font-size:.85rem">Loading…</span>
+</div>
+<h1 style="font-size:1.2rem;margin-bottom:.6rem;">3D View — {{ filename }}</h1>
+
+<div id="viewerWrap" style="position:relative;width:100%;max-width:900px;background:#0d1018;
+     border-radius:6px;overflow:hidden;aspect-ratio:3/2;">
+  <canvas id="c3d" style="width:100%;height:100%;display:block"></canvas>
+  <!-- overlay showing if mesh/textures are loading -->
+  <div id="overlay" style="position:absolute;inset:0;display:flex;align-items:center;
+       justify-content:center;color:#aaa;font-size:.9rem;pointer-events:none">
+    Building mesh…
+  </div>
+  <!-- FPS mode hint -->
+  <div id="fpsHint" style="display:none;position:absolute;inset:0;align-items:center;
+       justify-content:center;pointer-events:none;">
+    <div style="background:rgba(0,0,0,.65);color:#ddd;font-size:.9rem;padding:.5rem 1rem;
+         border-radius:6px;text-align:center">Click to capture mouse &nbsp;·&nbsp; Esc to exit</div>
+  </div>
+  <!-- FPS key-binding HUD (bottom-left, shown when pointer is locked) -->
+  <div id="fpsHelp" style="display:none;position:absolute;bottom:10px;left:10px;
+       background:rgba(0,0,0,.60);color:#ccc;font-size:.75rem;line-height:1.7;
+       padding:.45rem .7rem;border-radius:6px;pointer-events:none;z-index:9;
+       border:1px solid rgba(255,255,255,.08);">
+    <div style="color:#fff;font-weight:600;margin-bottom:.2rem;">FPS controls</div>
+    <div><kbd style="color:#aef">W A S D</kbd> &nbsp; Move</div>
+    <div><kbd style="color:#aef">Space / Ctrl</kbd> &nbsp; Up / Down</div>
+    <div><kbd style="color:#aef">Mouse</kbd> &nbsp; Look around</div>
+    <div><kbd style="color:#aef">P</kbd> &nbsp; Play / Pause</div>
+    <div><kbd style="color:#aef">Esc</kbd> &nbsp; Exit FPS</div>
+  </div>
+  <!-- corner overlay buttons (visible in fullscreen) -->
+  <div style="position:absolute;top:6px;right:6px;display:flex;gap:4px;z-index:10;">
+    <button id="btnFPSFs" title="FPS free-fly (WASD + mouse)" style="
+      background:rgba(0,0,0,.5);color:#ccc;border:1px solid #444;border-radius:4px;
+      padding:2px 7px;font-size:.85rem;cursor:pointer;display:none;">🎮 FPS</button>
+    <button id="btnFullscreen" title="Toggle fullscreen" style="
+      background:rgba(0,0,0,.5);color:#ccc;border:1px solid #444;border-radius:4px;
+      padding:2px 7px;font-size:1rem;cursor:pointer;">⛶</button>
+  </div>
+</div>
+
+<!-- Controls -->
+<div class="replay-controls" id="replayControls" style="display:none;margin-top:.4rem">
+  <button id="btnPlay">▶ Play</button>
+  <input type="range" id="seekBar" min="0" value="0" step="1">
+  <span class="replay-time" id="timeLabel">0:00 / 0:00</span>
+  <button id="btnSlower">−</button>
+  <button id="btnFaster">+</button>
+  <span class="replay-time" id="speedLabel">1×</span>
+  <!-- camera buttons -->
+  <button id="btnAngled"  style="margin-left:auto" title="Orbit view">↗ Orbit</button>
+  <button id="btnFollow"   title="Follow selected player (click player label first)">👁 Follow</button>
+  <button id="btnFPS"      title="FPS free-fly (WASD + mouse)">🎮 FPS</button>
+  <button id="btnFullscreen2" title="Toggle fullscreen">⛶</button>
+</div>
+
+<!-- Player chips -->
+<div class="player-chips" id="playerChips" style="margin-top:.5rem"></div>
+
+<script>
+const FILENAME = {{ filename|tojson }};
+</script>
+{% endblock %}
+
+{% block scripts %}
+<!-- Three.js r165 from CDN (ES module build via importmap) -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtTime(s) {
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2,'0')}`;
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function lerpAngle(a, b, t) {
+  let d = ((b - a) % 360 + 540) % 360 - 180;
+  return a + d * t;
+}
+
+// Q2 coords → Three.js:  x=Q2.x  y=Q2.z  z=-Q2.y
+function q2pos(x, y, z) { return new THREE.Vector3(x, z, -y); }
+
+// ── Renderer setup ───────────────────────────────────────────────────────────
+
+const canvas = document.getElementById('c3d');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const wrap = document.getElementById('viewerWrap');
+let W = wrap.clientWidth, H = wrap.clientHeight;
+renderer.setSize(W, H);
+
+window.addEventListener('resize', () => {
+  W = wrap.clientWidth; H = wrap.clientHeight;
+  renderer.setSize(W, H);
+  perspCam.aspect = W / H;
+  perspCam.updateProjectionMatrix();
+  insetCam.aspect = 190 / 226;
+  insetCam.updateProjectionMatrix();
+  updateOrtho();
+});
+
+// ── Cameras ──────────────────────────────────────────────────────────────────
+
+const perspCam = new THREE.PerspectiveCamera(60, W / H, 8, 80000);
+
+// Orthographic top-down — sized once we know the playable bounds
+let orthoSize = 3000;
+const ortho = new THREE.OrthographicCamera(
+  -orthoSize, orthoSize, orthoSize * H / W, -orthoSize * H / W, -80000, 80000
+);
+ortho.position.set(0, 50000, 0);
+ortho.lookAt(0, 0, 0);
+ortho.up.set(0, 0, -1);   // -Z = "up" in the top view (Q2 north)
+
+let activeCamera = perspCam;   // start in angled perspective mode
+
+function updateOrtho() {
+  const aspect = W / H;
+  ortho.left   = -orthoSize;
+  ortho.right  =  orthoSize;
+  ortho.top    =  orthoSize / aspect;    // top > bottom (Y-up world)
+  ortho.bottom = -orthoSize / aspect;
+  ortho.updateProjectionMatrix();
+}
+
+// OrbitControls — always attached to the *active* camera.
+// We recreate or reattach when the user switches camera mode.
+let controls = new OrbitControls(perspCam, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.12;
+controls.screenSpacePanning = true;
+controls.minPolarAngle  = 0;
+controls.maxPolarAngle  = Math.PI * 0.85;
+controls.minDistance    = 100;
+controls.maxDistance    = 30000;
+
+function switchControls(cam) {
+  controls.dispose();
+  controls = new OrbitControls(cam, canvas);
+  controls.enableDamping    = true;
+  controls.dampingFactor    = 0.12;
+  controls.screenSpacePanning = true;
+  if (cam === ortho) {
+    controls.minPolarAngle  = Math.PI / 2;   // with up=(0,0,-1), PI/2 = directly above
+    controls.maxPolarAngle  = Math.PI / 2;
+    controls.minDistance    = 200;
+    controls.maxDistance    = 60000;
+  } else {
+    controls.minPolarAngle  = 0;
+    controls.maxPolarAngle  = Math.PI * 0.85;
+    controls.minDistance    = 100;
+    controls.maxDistance    = 30000;
+  }
+}
+
+// ── Scene + lights ───────────────────────────────────────────────────────────
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1018);
+// NO fog — it hides everything when the ortho cam is at Y=50000
+
+// Strong ambient so all faces are well-lit from top-down
+const ambLight = new THREE.AmbientLight(0xffffff, 2.4);
+scene.add(ambLight);
+
+// Directional sun from upper-left (adds depth in angled view)
+const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.0);
+sunLight.position.set(-3000, 8000, 2000);
+scene.add(sunLight);
+
+// ── State ────────────────────────────────────────────────────────────────────
+
+let replayData = null;
+let meshLoaded = false;
+let playBounds = null;   // {cx, cy, span}
+
+let replayFrame = 0;
+let replayTime  = 0.0;
+let playing     = false;
+let playSpeed   = 1;
+let lastTS      = 0;
+let animHandle  = null;
+
+// Players: clientnum → { mesh, label, lastPos, team }
+const playerMeshes = {};
+let followTarget    = null;   // clientnum to follow
+const hiddenPlayers  = new Set();
+
+// ── FPS camera state ─────────────────────────────────────────────────────────
+let fpsMode  = false;
+const fpsKeys = new Set();   // e.code values of currently held keys
+let fpsPitch  = 0;           // look up/down, radians, clamped ±85°
+let fpsYaw    = 0;           // look left/right, radians
+const FPS_SPEED = 900;       // world-units per second
+const FPS_SENS  = 0.002;     // radians per pixel
+
+const TEAM_COLORS = { 1: 0xe85d5d, 2: 0x5b8dee };
+const NEUTRAL_COLOR = 0x88aacc;
+
+let md2Data = null;      // parsed MD2: {ntri, uvsArr, frames, anims, floorOffset}
+const md2Skins = {};     // team → THREE.Texture
+const weaponMd2 = {};    // model name → {ntri, uvsArr, frames, anims} (lazy-loaded)
+const weaponMd2Loading = new Set();  // names currently being fetched
+
+// ── Mesh loading ─────────────────────────────────────────────────────────────
+
+const overlay = document.getElementById('overlay');
+const loadStatus = document.getElementById('loadStatus');
+
+function setStatus(msg) {
+  loadStatus.textContent = msg;
+  overlay.textContent = msg;
+}
+
+async function loadMesh(mapname) {
+  setStatus('Fetching mesh data…');
+  overlay.style.display = 'flex';
+
+  const meshRes = await fetch(`/api/map/${encodeURIComponent(mapname)}/mesh`);
+  if (!meshRes.ok) {
+    setStatus('No BSP for this map.');
+    return;
+  }
+  const meshData = await meshRes.json();
+  playBounds = computePlayBounds(meshData.playable);
+
+  // Resize ortho to fit playable area with a little breathing room
+  orthoSize = playBounds.span * 0.6;
+  ortho.position.set(playBounds.cx, 50000, playBounds.cz);
+  ortho.lookAt(playBounds.cx, 0, playBounds.cz);
+  ortho.up.set(0, 0, -1);
+  updateOrtho();
+  controls.target.set(playBounds.cx, 0, playBounds.cz);
+  controls.update();
+
+  // Perspective cam starts behind and above the map centre
+  perspCam.position.set(
+    playBounds.cx - playBounds.span * 0.35,
+    playBounds.span * 0.55,
+    playBounds.cz + playBounds.span * 0.35
+  );
+  perspCam.lookAt(playBounds.cx, 0, playBounds.cz);
+
+  setStatus(`Loading ${meshData.textures.length} textures…`);
+
+  // Load all textures in parallel
+  const texLoader = new THREE.TextureLoader();
+  const texMap = {};   // texName → THREE.Texture
+
+  const texPromises = meshData.textures.map(name =>
+    new Promise(resolve => {
+      const url = `/api/map/${encodeURIComponent(mapname)}/texture/${encodeURIComponent(name)}`;
+      texLoader.load(
+        url,
+        tex => {
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          tex.colorSpace = THREE.SRGBColorSpace;
+          texMap[name] = tex;
+          resolve();
+        },
+        undefined,
+        () => { texMap[name] = null; resolve(); }   // fail silently
+      );
+    })
+  );
+  await Promise.all(texPromises);
+
+  setStatus('Building geometry…');
+
+  // Build one Mesh per texture group
+  let totalTris = 0;
+  for (const group of meshData.groups) {
+    if (group.positions.length === 0) continue;
+
+    const geo = new THREE.BufferGeometry();
+    // Q2 coords → Three.js: swap Y↔Z, negate new Z
+    const n   = group.positions.length / 3;
+    const pos = new Float32Array(n * 3);
+    const nrm = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      pos[i*3]   = group.positions[i*3];        // x → x
+      pos[i*3+1] = group.positions[i*3+2];      // z → y
+      pos[i*3+2] = -group.positions[i*3+1];     // -y → z
+      nrm[i*3]   = group.normals[i*3];
+      nrm[i*3+1] = group.normals[i*3+2];
+      nrm[i*3+2] = -group.normals[i*3+1];
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('uv',       new THREE.Float32BufferAttribute(group.uvs, 2));
+    geo.setAttribute('normal',   new THREE.BufferAttribute(nrm, 3));
+
+    const texName = meshData.textures[group.tex_index];
+    const tex     = texMap[texName] || null;
+
+    const mat = new THREE.MeshLambertMaterial({
+      map:         tex,
+      color:       tex ? 0xffffff : 0x888888,
+      transparent: group.opacity < 1.0,
+      opacity:     group.opacity,
+      side:        THREE.DoubleSide,   // show both faces (avoids invisible ceilings)
+    });
+
+    const mesh = new THREE.Mesh(geo, mat);
+    scene.add(mesh);
+    totalTris += n / 3;
+  }
+
+  overlay.style.display = 'none';
+  setStatus(`${mapname} — ${Math.round(totalTris).toLocaleString()} triangles`);
+  meshLoaded = true;
+
+  // MD2 models are already in Q2 world units — no scaling needed.
+  // The capsule fallback geometry is tiny (radius 16, height 56 Q2 units),
+  // but those ARE already world units too, so keep scale = 1 for both.
+  // modelScale is kept for label/inset positioning calculations.
+  const modelScale = 1;
+  for (const pm of Object.values(playerMeshes)) {
+    pm.mesh.scale.setScalar(1);
+    pm.modelScale = 1;
+  }
+
+  // Force a render now that geometry is ready
+  renderer.render(scene, activeCamera);
+}
+
+function computePlayBounds(pb) {
+  // Convert to Three.js coords
+  const cx = (pb.min_x + pb.max_x) * 0.5;
+  const cz = -(pb.min_y + pb.max_y) * 0.5;
+  const sx  = pb.max_x - pb.min_x;
+  const sz  = pb.max_y - pb.min_y;
+  return { cx, cz, span: Math.max(sx, sz) };
+}
+
+// ── Replay loading ────────────────────────────────────────────────────────────
+
+async function loadReplay() {
+  const res  = await fetch('/api/replay/' + encodeURIComponent(FILENAME));
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    setStatus('Error loading replay: ' + (data.error || res.status));
+    return;
+  }
+  replayData = data;
+
+  // Pre-compute which clients ever appear in frame data (used in updateFrame)
+  replayData._activeClients = new Set(
+    (data.frames || []).flatMap(f => Object.keys(f.players || {}))
+  );
+
+  // Build death event map for death-pose rendering
+  buildDeathMap(data);
+
+  // Set up seek bar
+  const seekBar = document.getElementById('seekBar');
+  seekBar.max   = Math.max(0, data.frame_count - 1);
+
+  document.getElementById('replayControls').style.display = '';
+  document.getElementById('timeLabel').textContent =
+    `0:00 / ${fmtTime(data.duration)}`;
+
+  // Load MD2 player model + team skins before building meshes
+  await Promise.all([loadMD2Model(), loadTeamSkins()]);
+
+  // Build player chips + Three.js meshes
+  buildPlayerMeshes(data);
+  buildPlayerChips(data);
+
+  // Load map mesh
+  if (data.map) await loadMesh(data.map);
+
+  // Start at frame 0
+  updateFrame(0, 0);
+  scheduleRender();
+}
+
+// ── MD2 model loading ─────────────────────────────────────────────────────────
+
+async function loadMD2Model() {
+  try {
+    const res = await fetch('/api/player/male/md2');
+    if (!res.ok) return;
+    const data = await res.json();
+    // Pre-convert frame arrays to Float32Array for fast typed-array copy
+    data.frames  = data.frames.map(f => new Float32Array(f));
+    data.uvsArr  = new Float32Array(data.uvs);
+    delete data.uvs;   // free the plain-array copy
+    // Compute floor offset from upright standing animations so feet sit at y=0
+    const uprightAnims = ['stand', 'run', 'attack', 'pain1', 'pain2', 'pain3'];
+    let minY = Infinity;
+    for (const animName of uprightAnims) {
+      const range = data.anims[animName];
+      if (!range) continue;
+      const [sStart, sEnd] = range;
+      for (let fi = sStart; fi <= sEnd; fi++) {
+        const f = data.frames[fi];
+        if (!f) continue;
+        for (let i = 1; i < f.length; i += 3) minY = Math.min(minY, f[i]);
+      }
+    }
+    data.floorOffset = minY === Infinity ? 24 : -minY;
+    md2Data = data;
+  } catch (e) {
+    console.warn('MD2 model load failed, falling back to capsules:', e);
+  }
+}
+
+async function loadWeaponMd2(modelName) {
+  if (weaponMd2[modelName] || weaponMd2Loading.has(modelName)) return;
+  weaponMd2Loading.add(modelName);
+  try {
+    const res = await fetch(`/api/player/male/weapon/${encodeURIComponent(modelName)}/md2`);
+    if (!res.ok) return;
+    const data = await res.json();
+    data.frames = data.frames.map(f => new Float32Array(f));
+    data.uvsArr = new Float32Array(data.uvs);
+    delete data.uvs;
+    // Load weapon skin texture if the server supplied a URL
+    if (data.skin_url) {
+      data.skinTex = await new Promise(resolve => {
+        new THREE.TextureLoader().load(data.skin_url, tex => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          resolve(tex);
+        }, undefined, () => resolve(null));
+      });
+    }
+    weaponMd2[modelName] = data;
+    // Attach to any player meshes that are already built and using this weapon
+    attachWeaponToPlayers(modelName);
+  } catch (e) {
+    console.warn('Weapon MD2 load failed for', modelName, e);
+  } finally {
+    weaponMd2Loading.delete(modelName);
+  }
+}
+
+async function loadTeamSkins() {
+  const loader = new THREE.TextureLoader();
+  const loadTex = url => new Promise(resolve => {
+    loader.load(url, tex => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      resolve(tex);
+    }, undefined, () => resolve(null));
+  });
+  const [red, blue] = await Promise.all([
+    loadTex('/players/male/ctf_r.png'),
+    loadTex('/players/male/ctf_b.png'),
+  ]);
+  md2Skins[1] = red;
+  md2Skins[2] = blue;
+  md2Skins[0] = red;   // neutral fallback
+}
+
+// ── Player meshes ─────────────────────────────────────────────────────────────
+
+const PLAYER_HEIGHT = 56;   // Q2 player standing height (units)
+const PLAYER_RADIUS = 16;
+
+function buildPlayerMeshes(data) {
+  const names  = data.player_names || {};
+  const pTeams = data.player_teams  || {};
+  const ghosts = new Set(data.ghost_clients || []);
+
+  for (const [num, name] of Object.entries(names)) {
+    const cnum = parseInt(num);
+    if (ghosts.has(cnum)) continue;
+
+    const team = pTeams[name] || 0;
+    const col  = TEAM_COLORS[team] || NEUTRAL_COLOR;
+
+    let innerMesh, geo = null;
+
+    if (md2Data) {
+      // ── MD2 player model ──────────────────────────────────────────────────
+      geo = new THREE.BufferGeometry();
+      const posArr = new Float32Array(md2Data.ntri * 9);   // ntri × 3 verts × 3 coords
+      const uvArr  = new Float32Array(md2Data.uvsArr);     // per-player copy of UVs
+      geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+      geo.setAttribute('uv',       new THREE.BufferAttribute(uvArr,  2));
+
+      const skin = md2Skins[team] || null;
+      const mat  = new THREE.MeshBasicMaterial({
+        map:       skin,
+        color:     skin ? 0xffffff : col,
+        side:      THREE.DoubleSide,
+        depthTest: false,
+      });
+      innerMesh = new THREE.Mesh(geo, mat);
+      innerMesh.renderOrder   = 2;
+      innerMesh.frustumCulled = false;  // bounding sphere from zeroed buffer is unreliable
+      // Populate with stand frame 0 immediately so the model is visible on load
+      const frame0 = md2Data.frames[0];
+      if (frame0) {
+        geo.attributes.position.array.set(frame0);
+        geo.attributes.position.needsUpdate = true;
+        geo.computeBoundingSphere();
+      }
+    } else {
+      // ── Fallback: capsule ─────────────────────────────────────────────────
+      const color   = new THREE.Color(col);
+      const bodyGeo = new THREE.CylinderGeometry(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_HEIGHT, 8);
+      const headGeo = new THREE.SphereGeometry(PLAYER_RADIUS * 1.1, 8, 6);
+      const mat     = new THREE.MeshBasicMaterial({ color, depthTest: false });
+      const darkMat = new THREE.MeshBasicMaterial({ color: color.clone().multiplyScalar(0.6), depthTest: false });
+
+      const body = new THREE.Mesh(bodyGeo, mat);
+      const head = new THREE.Mesh(headGeo, mat);
+      body.renderOrder = 2; head.renderOrder = 2;
+      head.position.y = PLAYER_HEIGHT * 0.5 + PLAYER_RADIUS * 0.8;
+
+      const dirGeo = new THREE.ConeGeometry(PLAYER_RADIUS * 0.5, PLAYER_RADIUS * 2, 4);
+      const dir    = new THREE.Mesh(dirGeo, darkMat);
+      dir.renderOrder = 2;
+      dir.rotation.z = -Math.PI / 2;
+      dir.position.set(PLAYER_RADIUS * 1.5, PLAYER_HEIGHT * 0.25, 0);
+
+      innerMesh = new THREE.Group();
+      innerMesh.add(body, head, dir);
+    }
+
+    const group = new THREE.Group();
+    group.add(innerMesh);
+    group.visible = false;
+    scene.add(group);
+
+    // Small team-coloured disc underneath the model — useful in top-down view.
+    const discGeo = new THREE.CircleGeometry(PLAYER_RADIUS * 1.2, 16);
+    const discMat = new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide, depthTest: false });
+    const disc    = new THREE.Mesh(discGeo, discMat);
+    disc.rotation.x = -Math.PI / 2;   // lie flat on XZ plane
+    disc.position.y = 1;              // 1 unit above floor to avoid z-fight
+    disc.renderOrder = 1;
+    disc.frustumCulled = false;
+    group.add(disc);
+
+    const label = makeNameLabel(name, col);
+    scene.add(label);
+
+    playerMeshes[cnum] = {
+      mesh: group,
+      disc,
+      geo,           // BufferGeometry for MD2 animation (null for capsule)
+      label,
+      team,
+      name,
+      animTime:      0,
+      lastPos:       null,     // {x, y} for speed estimation
+      lastKnownPos:  null,     // {x, y, z, yaw} — last frame player was visible
+      isDead:        false,    // currently showing death pose
+      deathAnim:     null,     // 'death1'|'death2'|'death3'|'crdeath'
+      currentAnim:   'stand',
+      weaponName:    null,     // current vwep model stem e.g. 'w_mk23'
+      weapMesh:      null,     // Three.js Mesh for weapon model
+    };
+  }
+}
+
+// ── Death event map ───────────────────────────────────────────────────────────
+
+// deathMap: cnum (int) → sorted list of {frame, anim}
+const deathMap = {};
+// Fallback weapon model index map (server precache order).
+// Key is the ps.gunindex as a string (JSON object keys are strings).
+// This only used when weapon_models is absent from the API response.
+const _FALLBACK_WEAPONS = {
+  '0': '',
+  // Indices filled from configstrings at runtime via replayData.weapon_models
+};
+
+function buildDeathMap(data) {
+  // Build per-client death event list from the kills array.
+  // Victims are identified by name; we need cnum.
+  const nameToCnum = {};
+  for (const [num, name] of Object.entries(data.player_names || {})) {
+    nameToCnum[name] = parseInt(num);
+  }
+
+  for (const kill of (data.kills || [])) {
+    const cnum = nameToCnum[kill.victim];
+    if (cnum == null) continue;
+    if (!deathMap[cnum]) deathMap[cnum] = [];
+    // Assign a deterministic death animation: cycle through death1/2/3
+    const variants = ['death1', 'death2', 'death3'];
+    const anim = variants[deathMap[cnum].length % 3];
+    deathMap[cnum].push({ frame: kill.frame, anim });
+  }
+}
+
+// ── Weapon model helpers ──────────────────────────────────────────────────────
+
+function resolveWeaponName(weapIndex) {
+  // Map ps.gunindex → vwep model filename stem using API data or fallback.
+  if (!replayData) return '';
+  const wm = replayData.weapon_models || {};
+  return wm[weapIndex] || wm[String(weapIndex)] || '';
+}
+
+function makeWeaponMesh(modelName) {
+  const wd = weaponMd2[modelName];
+  if (!wd) return null;
+  const geo = new THREE.BufferGeometry();
+  const posArr = new Float32Array(wd.ntri * 9);
+  geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  geo.setAttribute('uv',       new THREE.BufferAttribute(new Float32Array(wd.uvsArr), 2));
+  const mat = new THREE.MeshBasicMaterial({
+    map:       wd.skinTex || null,
+    color:     wd.skinTex ? 0xffffff : 0xccaa88,
+    side:      THREE.DoubleSide,
+    depthTest: false,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder   = 2;
+  mesh.frustumCulled = false;
+  // Set stand frame 0 immediately
+  const frame0 = wd.frames[0];
+  if (frame0) {
+    posArr.set(frame0);
+    geo.attributes.position.needsUpdate = true;
+  }
+  return mesh;
+}
+
+function attachWeaponToPlayers(modelName) {
+  // Called after a new weapon MD2 finishes loading — attach to any player
+  // that is currently waiting for this model.
+  for (const pm of Object.values(playerMeshes)) {
+    if (pm.weaponName === modelName && !pm.weapMesh) {
+      const mesh = makeWeaponMesh(modelName);
+      if (mesh) {
+        pm.weapMesh = mesh;
+        pm.mesh.add(mesh);  // child of player group → inherits position+rotation
+      }
+    }
+  }
+}
+
+function ensureWeapon(pm, weapIndex) {
+  const modelName = resolveWeaponName(weapIndex);
+  if (!modelName) return;
+  if (pm.weaponName === modelName) return;  // already set up
+  pm.weaponName = modelName;
+
+  // Remove old weapon mesh if any
+  if (pm.weapMesh) {
+    pm.mesh.remove(pm.weapMesh);
+    pm.weapMesh = null;
+  }
+
+  // Try to attach immediately if already loaded
+  if (weaponMd2[modelName]) {
+    const mesh = makeWeaponMesh(modelName);
+    if (mesh) {
+      pm.weapMesh = mesh;
+      pm.mesh.add(mesh);
+    }
+  } else {
+    // Load asynchronously — attachWeaponToPlayers will attach when ready
+    loadWeaponMd2(modelName);
+  }
+}
+
+
+
+function updatePlayerAnimation(pm, p, dt) {
+  if (!md2Data || !pm.geo) return;
+
+  // ── Death pose: freeze on the last frame of the assigned death animation ──
+  if (pm.isDead) {
+    const range = md2Data.anims[pm.deathAnim || 'death1'];
+    if (range) {
+      const endFrame = md2Data.frames[range[1]];
+      if (endFrame) {
+        pm.geo.attributes.position.array.set(endFrame);
+        pm.geo.attributes.position.needsUpdate = true;
+      }
+      // Mirror death pose to weapon
+      if (pm.weapMesh) {
+        const wd = weaponMd2[pm.weaponName];
+        if (wd && wd.frames && wd.anims) {
+          const wr = wd.anims[pm.deathAnim || 'death1'];
+          if (wr) {
+            const wEnd = wd.frames[wr[1]];
+            if (wEnd) {
+              pm.weapMesh.geometry.attributes.position.array.set(wEnd);
+              pm.weapMesh.geometry.attributes.position.needsUpdate = true;
+            }
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  // ── Determine animation from motion ──────────────────────────────────────
+  let speed = 0;
+  let vspeed = 0;   // vertical speed in Q2 units/s (positive = going up)
+  if (pm.lastPos && dt > 0) {
+    const dx = p.x - pm.lastPos.x;
+    const dy = p.y - pm.lastPos.y;
+    speed  = Math.sqrt(dx * dx + dy * dy) / dt;
+    vspeed = (p.z - (pm.lastPos.z || 0)) / dt;
+  }
+  pm.lastPos = { x: p.x, y: p.y, z: p.z };
+
+  let anim;
+  if (vspeed > 80) {
+    anim = 'jump';      // significant upward velocity = jumping
+  } else if (speed > 30) {
+    anim = 'run';
+  } else {
+    anim = 'stand';
+  }
+
+  if (anim !== pm.currentAnim) {
+    pm.currentAnim = anim;
+    pm.animTime    = 0;
+  }
+
+  if (dt > 0) pm.animTime += dt * 10;
+
+  const range = md2Data.anims[anim] || md2Data.anims['stand'];
+  if (!range) return;
+  const [start, end] = range;
+  const count    = end - start + 1;
+  const floatIdx = pm.animTime % count;
+  const idxA     = start + Math.floor(floatIdx);
+  const idxB     = start + (Math.floor(floatIdx) + 1) % count;
+  const alpha    = floatIdx - Math.floor(floatIdx);
+
+  const frameA = md2Data.frames[idxA];
+  const frameB = md2Data.frames[idxB];
+  if (!frameA || !frameB) return;
+
+  // Lerp every vertex position between the two surrounding MD2 frames
+  const posAttr = pm.geo.attributes.position;
+  const dst     = posAttr.array;
+  for (let i = 0; i < dst.length; i++) {
+    dst[i] = frameA[i] + (frameB[i] - frameA[i]) * alpha;
+  }
+  posAttr.needsUpdate = true;
+
+  // ── Mirror animation to weapon model ─────────────────────────────────────
+  if (pm.weapMesh) {
+    const wd = weaponMd2[pm.weaponName];
+    if (wd && wd.frames && wd.anims) {
+      const wr = wd.anims[anim] || wd.anims['stand'];
+      if (wr) {
+        const [ws, we] = wr;
+        const wc  = we - ws + 1;
+        const wfi = pm.animTime % wc;
+        const wiA = ws + Math.floor(wfi);
+        const wiB = ws + (Math.floor(wfi) + 1) % wc;
+        const wa  = wfi - Math.floor(wfi);
+        const wfA = wd.frames[wiA];
+        const wfB = wd.frames[wiB];
+        if (wfA && wfB) {
+          const wp = pm.weapMesh.geometry.attributes.position;
+          const wd2 = wp.array;
+          for (let i = 0; i < wd2.length; i++) wd2[i] = wfA[i] + (wfB[i] - wfA[i]) * wa;
+          wp.needsUpdate = true;
+        }
+      }
+    }
+  }
+}
+
+
+function makeNameLabel(name, colHex) {
+  const cvs = document.createElement('canvas');
+  cvs.width = 256; cvs.height = 48;
+  const ctx = cvs.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.roundRect(2, 2, cvs.width - 4, cvs.height - 4, 8);
+  ctx.fill();
+  ctx.fillStyle = '#' + new THREE.Color(colHex).getHexString();
+  ctx.font = 'bold 22px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(name, cvs.width / 2, cvs.height / 2);
+
+  const tex = new THREE.CanvasTexture(cvs);
+  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(220, 42, 1);
+  sprite.visible = false;
+  return sprite;
+}
+
+// ── Frame interpolation ───────────────────────────────────────────────────────
+
+function getInterpolatedFrame(t) {
+  if (!replayData) return null;
+  const fi      = replayData.frame_interval || 0.1;
+  const frameF  = t / fi;
+  const fA      = Math.floor(frameF);
+  const fB      = Math.min(fA + 1, replayData.frame_count - 1);
+  const alpha   = frameF - fA;
+  const frames  = replayData.frames;
+  if (!frames || !frames[fA]) return { frame: fA, players: {} };
+
+  const posA = frames[fA].players || {};
+  const posB = (frames[fB] || {}).players || {};
+  const out  = {};
+  for (const [k, a] of Object.entries(posA)) {
+    const b = posB[k];
+    if (b) {
+      out[k] = {
+        x:   lerp(a.x, b.x, alpha),
+        y:   lerp(a.y, b.y, alpha),
+        z:   lerp(a.z, b.z, alpha),
+        yaw: lerpAngle(a.a, b.a, alpha),  // MVD2 snapshot field is 'a', not 'yaw'
+        w:   a.w || 0,                     // weapon index — no interpolation needed
+      };
+    } else {
+      out[k] = { ...a, yaw: a.a };  // normalise to 'yaw' for updateFrame
+    }
+  }
+  return { frame: fA, players: out };
+}
+
+function updateFrame(frame, t, dt = 0) {
+  replayFrame = frame;
+
+  const interp = getInterpolatedFrame(t);
+  if (!interp) return;
+
+  const players = interp.players;
+  const activeClients = replayData._activeClients || new Set();
+
+  // At round boundaries, clear all death poses so dead players vanish cleanly
+  const roundStarts = replayData.round_start_frames || [];
+  const isRoundStart = roundStarts.includes(frame);
+
+  const Q2_ORIGIN_TO_FLOOR = 24;
+  const floorOff = md2Data ? md2Data.floorOffset : 0;
+
+  for (const [cnum, pm] of Object.entries(playerMeshes)) {
+    const cnumInt = parseInt(cnum);
+    const p = players[cnum];
+    const isHidden = hiddenPlayers.has(cnumInt);
+    const isLive = !isHidden && !!p && activeClients.has(String(cnum));
+
+    if (isLive) {
+      // ── Player is present in this frame ────────────────────────────────
+      pm.isDead = false;
+      pm.mesh.visible  = true;
+      pm.label.visible = true;
+
+      const tx = p.x;
+      const ty = p.z;
+      const tz = -p.y;
+      pm.mesh.position.set(tx, ty - Q2_ORIGIN_TO_FLOOR + floorOff, tz);
+      pm.mesh.rotation.y = -p.yaw * Math.PI / 180;
+      pm.label.position.set(tx, ty + PLAYER_HEIGHT + 20, tz);
+
+      // Track last-known position for death-pose display
+      pm.lastKnownPos = { x: p.x, y: p.y, z: p.z, yaw: p.yaw };
+
+      // Update weapon model
+      ensureWeapon(pm, p.w || 0);
+
+      // Animate MD2 model frame
+      updatePlayerAnimation(pm, p, dt);
+
+    } else {
+      // ── Player absent — show death pose if applicable ──────────────────
+      pm.lastPos = null;  // reset velocity for speed tracking
+
+      if (isRoundStart) {
+        pm.isDead = false;
+      }
+
+      if (!pm.isDead || isRoundStart) {
+        // Check if player has a death event at or before the current frame
+        const deaths = deathMap[cnumInt] || [];
+        let latestDeath = null;
+        for (const d of deaths) {
+          if (d.frame <= frame) latestDeath = d;
+          else break;
+        }
+        if (latestDeath && pm.lastKnownPos && !isHidden && !isRoundStart) {
+          pm.isDead = true;
+          pm.deathAnim = latestDeath.anim;
+        } else {
+          pm.isDead = false;
+        }
+      }
+
+      if (pm.isDead && pm.lastKnownPos) {
+        // Frozen death pose at last known position
+        const pos = pm.lastKnownPos;
+        const tx = pos.x;
+        const ty = pos.z;
+        const tz = -pos.y;
+        pm.mesh.position.set(tx, ty - Q2_ORIGIN_TO_FLOOR + floorOff, tz);
+        pm.mesh.rotation.y = -pos.yaw * Math.PI / 180;
+        pm.mesh.visible  = true;
+        pm.label.visible = false;   // hide name over corpse
+        updatePlayerAnimation(pm, pos, 0);
+      } else {
+        pm.mesh.visible  = false;
+        pm.label.visible = false;
+        if (isRoundStart) {
+          // Clear last-known-pos so stale death pose can't flicker at next round
+          pm.lastKnownPos = null;
+        }
+      }
+    }
+  }
+
+  // Camera follow
+  if (followTarget !== null) {
+    const pm = playerMeshes[followTarget];
+    if (pm && pm.mesh.visible) {
+      const tp = pm.mesh.position;
+      if (activeCamera === ortho) {
+        ortho.position.set(tp.x, 50000, tp.z);
+        ortho.lookAt(tp.x, 0, tp.z);
+      } else {
+        const offset = new THREE.Vector3(-800, 600, 400);
+        perspCam.position.copy(tp).add(offset);
+        perspCam.lookAt(tp);
+        controls.target.copy(tp);
+      }
+    }
+  }
+
+  // Update seek bar + time label
+  document.getElementById('seekBar').value = frame;
+  if (replayData) {
+    document.getElementById('timeLabel').textContent =
+      `${fmtTime(t)} / ${fmtTime(replayData.duration)}`;
+  }
+}
+
+// ── Animation loop ────────────────────────────────────────────────────────────
+
+function animLoop(ts) {
+  animHandle = requestAnimationFrame(animLoop);
+  const realDt = Math.min((ts - lastTS) / 1000, 0.1);
+
+  if (!fpsMode) controls.update();
+
+  // ── FPS movement ────────────────────────────────────────────────────────
+  if (fpsMode && fpsKeys.size > 0) {
+    const mv   = FPS_SPEED * realDt;
+    const fwd  = new THREE.Vector3(0, 0, -1)
+      .applyEuler(new THREE.Euler(fpsPitch, fpsYaw, 0, 'YXZ'));
+    const rgt  = new THREE.Vector3(1, 0, 0)
+      .applyEuler(new THREE.Euler(0, fpsYaw, 0, 'YXZ'));
+    if (fpsKeys.has('KeyW') || fpsKeys.has('ArrowUp'))               perspCam.position.addScaledVector(fwd, mv);
+    if (fpsKeys.has('KeyS') || fpsKeys.has('ArrowDown'))             perspCam.position.addScaledVector(fwd, -mv);
+    if (fpsKeys.has('KeyA') || fpsKeys.has('ArrowLeft'))             perspCam.position.addScaledVector(rgt, -mv);
+    if (fpsKeys.has('KeyD') || fpsKeys.has('ArrowRight'))            perspCam.position.addScaledVector(rgt, mv);
+    if (fpsKeys.has('Space'))                                        perspCam.position.y += mv;
+    if (fpsKeys.has('ControlLeft') || fpsKeys.has('ControlRight'))   perspCam.position.y -= mv;
+  }
+
+  if (playing && replayData) {
+    const dt = realDt * playSpeed;
+    replayTime = Math.min(replayTime + dt, replayData.duration);
+    if (replayTime >= replayData.duration) {
+      replayTime = replayData.duration;
+      playing = false;
+      document.getElementById('btnPlay').textContent = '▶ Play';
+    }
+    const fi    = replayData.frame_interval || 0.1;
+    const frame = Math.min(Math.floor(replayTime / fi), replayData.frame_count - 1);
+    updateFrame(frame, replayTime, dt);
+  }
+  lastTS = ts;
+
+  renderer.render(scene, activeCamera);
+}
+
+function scheduleRender() {
+  if (!animHandle) animHandle = requestAnimationFrame(animLoop);
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+
+document.getElementById('btnPlay').addEventListener('click', () => {
+  if (!replayData) return;
+  playing = !playing;
+  document.getElementById('btnPlay').textContent = playing ? '⏸ Pause' : '▶ Play';
+  if (playing && replayTime >= replayData.duration) replayTime = 0;
+});
+
+document.getElementById('seekBar').addEventListener('input', e => {
+  if (!replayData) return;
+  const fi = replayData.frame_interval || 0.1;
+  const frame = parseInt(e.target.value);
+  replayTime  = frame * fi;
+  updateFrame(frame, replayTime, 0);
+  renderer.render(scene, activeCamera);
+});
+
+document.getElementById('btnSlower').addEventListener('click', () => {
+  const speeds = [0.25, 0.5, 1, 2, 4];
+  const idx = speeds.indexOf(playSpeed);
+  if (idx > 0) playSpeed = speeds[idx - 1];
+  document.getElementById('speedLabel').textContent = playSpeed + '×';
+});
+
+document.getElementById('btnFaster').addEventListener('click', () => {
+  const speeds = [0.25, 0.5, 1, 2, 4];
+  const idx = speeds.indexOf(playSpeed);
+  if (idx < speeds.length - 1) playSpeed = speeds[idx + 1];
+  document.getElementById('speedLabel').textContent = playSpeed + '×';
+});
+
+// Camera mode buttons
+document.getElementById('btnAngled').addEventListener('click', () => {
+  followTarget = null;
+  activeCamera = perspCam;
+  switchControls(perspCam);
+  if (playBounds) {
+    perspCam.position.set(
+      playBounds.cx - playBounds.span * 0.35,
+      playBounds.span * 0.55,
+      playBounds.cz + playBounds.span * 0.35
+    );
+    perspCam.lookAt(playBounds.cx, 0, playBounds.cz);
+    controls.target.set(playBounds.cx, 0, playBounds.cz);
+    controls.update();
+  }
+  renderer.render(scene, activeCamera);
+});
+
+document.getElementById('btnFollow').addEventListener('click', () => {
+  // Follow the first visible player if none already selected
+  if (followTarget === null) {
+    for (const [cnum, pm] of Object.entries(playerMeshes)) {
+      if (pm.mesh.visible) { followTarget = parseInt(cnum); break; }
+    }
+  }
+  activeCamera = perspCam;
+  switchControls(perspCam);
+  // Reposition camera immediately (don't wait for Play)
+  if (replayData) {
+    const fi = replayData.frame_interval || 0.1;
+    updateFrame(replayFrame, replayFrame * fi, 0);
+  }
+});
+
+// ── Player chips ──────────────────────────────────────────────────────────────
+
+function buildPlayerChips(data) {
+  const chips  = document.getElementById('playerChips');
+  const names  = data.player_names || {};
+  const pTeams = data.player_teams  || {};
+  const ghosts = new Set(data.ghost_clients || []);
+  const CHIP_COLORS = { 1: '#e85d5d', 2: '#5b8dee' };
+
+  for (const [num, name] of Object.entries(names)) {
+    const cnum = parseInt(num);
+    if (ghosts.has(cnum)) continue;
+
+    const chip  = document.createElement('button');
+    chip.className = 'player-chip';
+    const team  = pTeams[name];
+    const col   = team ? CHIP_COLORS[team] : '#88aacc';
+    chip.textContent = (team === 1 ? '◆ ' : team === 2 ? '◆ ' : '') + name;
+    chip.dataset.num  = num;
+    chip.style.borderColor = col;
+    chip.style.color       = col;
+
+    // Left-click = follow this player (click again or press Top-Down to unfollow)
+    chip.addEventListener('click', () => {
+      if (followTarget === cnum) {
+        followTarget = null;
+        document.querySelectorAll('.player-chip').forEach(c => c.style.outline = '');
+      } else {
+        followTarget = cnum;
+        activeCamera = perspCam;
+        switchControls(perspCam);
+        document.querySelectorAll('.player-chip').forEach(c => c.style.outline = '');
+        chip.style.outline = `2px solid ${col}`;
+        // Reposition camera immediately (don't wait for Play)
+        if (replayData) {
+          const fi = replayData.frame_interval || 0.1;
+          updateFrame(replayFrame, replayFrame * fi, 0);
+        }
+      }
+    });
+
+    chips.appendChild(chip);
+  }
+}
+
+// ── FPS + Fullscreen controls ─────────────────────────────────────────────────
+
+function setFPSButtonState(active) {
+  for (const id of ['btnFPS', 'btnFPSFs']) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    b.textContent   = active ? '🎮 Exit FPS' : '🎮 FPS';
+    b.style.outline = active ? '2px solid #5b8dee' : '';
+  }
+}
+
+function enterFPS() {
+  followTarget = null;
+  document.querySelectorAll('.player-chip').forEach(c => c.style.outline = '');
+  activeCamera = perspCam;
+  // Read camera direction → initial yaw/pitch (safe for any prior camera state)
+  const dir = new THREE.Vector3();
+  perspCam.getWorldDirection(dir);
+  fpsYaw   = Math.atan2(-dir.x, -dir.z);
+  fpsPitch = Math.asin(Math.max(-1, Math.min(1, dir.y)));
+  perspCam.rotation.order = 'YXZ';
+  perspCam.rotation.set(fpsPitch, fpsYaw, 0);
+  controls.enabled = false;
+  fpsMode = true;
+  setFPSButtonState(true);
+  document.getElementById('fpsHint').style.display = 'flex';
+  canvas.requestPointerLock();
+}
+
+function exitFPS() {
+  fpsMode = false;
+  fpsKeys.clear();
+  controls.enabled = true;
+  setFPSButtonState(false);
+  document.getElementById('fpsHint').style.display = 'none';
+  document.getElementById('fpsHelp').style.display = 'none';
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+}
+
+document.getElementById('btnFPS').addEventListener('click', () => {
+  if (fpsMode) exitFPS(); else enterFPS();
+});
+document.getElementById('btnFPSFs').addEventListener('click', () => {
+  if (fpsMode) exitFPS(); else enterFPS();
+});
+
+// Pointer lock is released (Esc key or programmatic exit)
+document.addEventListener('pointerlockchange', () => {
+  if (fpsMode && document.pointerLockElement !== canvas) {
+    exitFPS();
+  }
+  if (fpsMode && document.pointerLockElement === canvas) {
+    // Mouse is now locked — hide the "click to capture" hint, show key help
+    document.getElementById('fpsHint').style.display = 'none';
+    document.getElementById('fpsHelp').style.display = '';
+  }
+});
+
+// Canvas click while in FPS mode (re-lock if browser released pointer lock)
+canvas.addEventListener('click', () => {
+  if (fpsMode && document.pointerLockElement !== canvas) canvas.requestPointerLock();
+});
+
+// Mouse look
+document.addEventListener('mousemove', e => {
+  if (!fpsMode || document.pointerLockElement !== canvas) return;
+  fpsYaw   -= e.movementX * FPS_SENS;
+  fpsPitch -= e.movementY * FPS_SENS;
+  fpsPitch = Math.max(-Math.PI * 0.47, Math.min(Math.PI * 0.47, fpsPitch));
+  perspCam.rotation.set(fpsPitch, fpsYaw, 0);
+});
+
+// Keyboard — prevent page scroll on WASD/Space/Ctrl when in FPS mode
+const FPS_CONSUMED = new Set(['KeyW','KeyA','KeyS','KeyD','Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ControlLeft','ControlRight']);
+document.addEventListener('keydown', e => {
+  if (!fpsMode) return;
+  fpsKeys.add(e.code);
+  if (FPS_CONSUMED.has(e.code)) e.preventDefault();
+  // P = play/pause while in FPS mode
+  if (e.code === 'KeyP' && replayData) {
+    playing = !playing;
+    document.getElementById('btnPlay').textContent = playing ? '⏸ Pause' : '▶ Play';
+    if (playing && replayTime >= replayData.duration) replayTime = 0;
+    e.preventDefault();
+  }
+});
+document.addEventListener('keyup', e => { fpsKeys.delete(e.code); });
+
+// Fullscreen toggle (both corner button and controls button do the same thing)
+function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    wrap.requestFullscreen();
+  }
+}
+document.getElementById('btnFullscreen').addEventListener('click', toggleFullscreen);
+document.getElementById('btnFullscreen2').addEventListener('click', toggleFullscreen);
+
+document.addEventListener('fullscreenchange', () => {
+  const inFS = !!document.fullscreenElement;
+  const label = inFS ? '✕ Exit FS' : '⛶';
+  document.getElementById('btnFullscreen').textContent  = label;
+  document.getElementById('btnFullscreen2').textContent = label;
+  // Show the in-canvas FPS button only in fullscreen (controls bar is hidden then)
+  document.getElementById('btnFPSFs').style.display = inFS ? '' : 'none';
+  // Resize renderer to match the new element size
+  requestAnimationFrame(() => {
+    W = wrap.clientWidth; H = wrap.clientHeight;
+    renderer.setSize(W, H);
+    perspCam.aspect = W / H;
+    perspCam.updateProjectionMatrix();
+    updateOrtho();
+  });
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+loadReplay();
+scheduleRender();
+
+</script>
+{% endblock %}

@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+{% block title %}Player Stats — AQ2{% endblock %}
+
+{% block content %}
+{% set active_stats_page = 'players' %}
+{% include "_stats_nav.html" %}
+
+<div class="card">
+  <div class="stats-section-head">
+    <h2>Player Leaderboard</h2>
+    <div class="stats-inline-controls">
+      <label class="stats-control compact">
+        <span class="help-label" title="Case-insensitive name filter, applied client-side.">Search</span>
+        <input id="playersSearch" type="search" placeholder="name…"
+               style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:.2rem .45rem;font-size:.78rem;min-width:9rem;">
+      </label>
+      <label class="stats-control compact">
+        <span class="help-label" title="Only include players with at least this number of games.">Min games</span>
+        <select id="playersMinGames">
+          <option value="1">1</option>
+          <option value="3">3</option>
+          <option value="5" selected>5</option>
+          <option value="10">10</option>
+          <option value="20">20</option>
+        </select>
+      </label>
+      <label class="stats-control compact">
+        <span class="help-label" title="Which stat columns to show.">Columns</span>
+        <select id="playersColumnPreset">
+          <option value="overview" selected>Overview</option>
+          <option value="impact">Impact</option>
+          <option value="accuracy">Accuracy</option>
+          <option value="awards">Awards</option>
+          <option value="all">All</option>
+        </select>
+      </label>
+      <label class="stats-control compact">
+        <span>Per page</span>
+        <select id="playersPageSize">
+          <option value="25" selected>25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="0">All</option>
+        </select>
+      </label>
+    </div>
+  </div>
+  <div style="overflow-x:auto;">
+    <table id="playersTable">
+      <thead>
+        <tr>
+          <th class="num" style="width:2.5rem;">#</th>
+          <th class="sortable help-label" data-sort="name" title="Player name.">Player</th>
+          <th class="num sortable help-label" data-sort="games" title="Matches played.">Games</th>
+          <th class="num sortable help-label" data-sort="kills" title="Total kills.">Kills</th>
+          <th class="num sortable help-label" data-sort="deaths" title="Total deaths.">Deaths</th>
+          <th class="num sortable help-label" data-sort="kd" title="Kills divided by deaths.">K/D</th>
+          <th class="num sortable help-label" data-sort="avg_kills" title="Average kills per match.">Avg K</th>
+          <th class="num sortable help-label" data-sort="damage" title="Estimated total damage dealt.">Damage</th>
+          <th class="num sortable help-label col-impact" data-sort="damage_per_round" title="Average damage dealt per round played (teamplay only).">Dmg/Rnd</th>
+          <th class="num sortable help-label col-impact" data-sort="impact_score" title="Per-round impact score combining kills, assists, damage, first kills, survival and deaths. Formula: (kills×100 + assistsV×60 + assistsE×30 + damage×0.20 + firstKills×40 + survived×20 − deaths×35) ÷ rounds.">Impact</th>
+          <th class="num sortable help-label" data-sort="hs_kills" title="Headshot kills.">HS</th>
+          <th class="num sortable help-label" data-sort="avg_acc" title="Average accuracy percentage.">Acc%</th>
+          <th class="num sortable help-label" data-sort="head_pct" title="Share of hits to head location.">Head%</th>
+          <th class="num sortable help-label col-loc-extra" data-sort="stom_pct" title="Share of hits to stomach location.">Stom%</th>
+          <th class="num sortable help-label col-loc-extra" data-sort="chest_pct" title="Share of hits to chest location.">Chest%</th>
+          <th class="num sortable help-label col-loc-extra" data-sort="legs_pct" title="Share of hits to leg location.">Legs%</th>
+          <th class="num sortable help-label col-awards" data-sort="awards_impressive" title="Impressive awards (5-kill streak).">Impr</th>
+          <th class="num sortable help-label col-awards" data-sort="awards_accuracy" title="Accuracy awards (3 consecutive headshots).">AccAwd</th>
+          <th class="num sortable help-label col-awards" data-sort="awards_excellent" title="Excellent awards (12-kill streak).">Excl</th>
+        </tr>
+      </thead>
+      <tbody id="playersTableBody">
+        <tr><td colspan="19" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="tbl-pager" id="playersPager" style="display:none;">
+    <button id="playersPrevBtn">← Prev</button>
+    <span id="playersPageInfo"></span>
+    <button id="playersNextBtn">Next →</button>
+  </div>
+</div>
+
+<style>
+#playersTable td.acc-cell { position:relative; }
+#playersTable td.acc-cell .acc-bar {
+  position:absolute; left:.3rem; right:.3rem; bottom:.18rem; height:3px;
+  background:var(--border); border-radius:2px; overflow:hidden; opacity:.7;
+}
+#playersTable td.acc-cell .acc-bar::after {
+  content:""; position:absolute; left:0; top:0; bottom:0;
+  background:linear-gradient(90deg,var(--accent2),var(--yellow),var(--green));
+  width:var(--acc,0%);
+}
+#playersTable td.acc-cell .acc-val { position:relative; z-index:1; }
+#playersTable.preset-overview .col-loc-extra,
+#playersTable.preset-overview .col-awards,
+#playersTable.preset-overview .col-impact { display:none; }
+#playersTable.preset-accuracy .col-awards,
+#playersTable.preset-accuracy .col-impact { display:none; }
+#playersTable.preset-awards .col-loc-extra,
+#playersTable.preset-awards .col-impact { display:none; }
+#playersTable.preset-impact .col-loc-extra,
+#playersTable.preset-impact .col-awards { display:none; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  var S = window.AQ2Stats;
+  if (!S) return;
+
+  var filters = S.bindFilters();
+  S.initStatusBadge({ badgeId: 'statusBadge' });
+
+  var minGamesEl = document.getElementById('playersMinGames');
+  var pageSizeEl = document.getElementById('playersPageSize');
+  var presetEl   = document.getElementById('playersColumnPreset');
+  var searchEl   = document.getElementById('playersSearch');
+  var tableEl    = document.getElementById('playersTable');
+  var body       = document.getElementById('playersTableBody');
+  var pager      = document.getElementById('playersPager');
+  var prevBtn    = document.getElementById('playersPrevBtn');
+  var nextBtn    = document.getElementById('playersNextBtn');
+  var pageInfo   = document.getElementById('playersPageInfo');
+
+  var _rawData  = [];
+  var _data     = [];
+  var _sort     = { col: 'kd', dir: -1 };
+  var _page     = 0;
+  var _pageSize = 25;
+  var _filter   = '';
+  var COLS      = 19;
+
+  if (tableEl) tableEl.classList.add('preset-overview');
+
+  function playerAnchor(name) {
+    return '<a href="/player/' + encodeURIComponent(name) + '">' + S.escHtml(name) + '</a>';
+  }
+
+  function computeLocPcts(r) {
+    var t = (r.h_head || 0) + (r.h_stomach || 0) + (r.h_chest || 0) + (r.h_legs || 0);
+    r.head_pct  = t ? r.h_head    / t * 100 : null;
+    r.stom_pct  = t ? r.h_stomach / t * 100 : null;
+    r.chest_pct = t ? r.h_chest   / t * 100 : null;
+    r.legs_pct  = t ? r.h_legs    / t * 100 : null;
+    r.kd = r.deaths ? r.kills / r.deaths : r.kills || 0;
+  }
+
+  function p(v, d) {
+    if (v == null) return '—';
+    return parseFloat(v).toFixed(d != null ? d : 1) + '%';
+  }
+
+  function renderPager() {
+    var total    = _data.length;
+    var pageSize = _pageSize === 0 ? total : _pageSize;
+    if (total === 0 || pageSize >= total) { pager.style.display = 'none'; return; }
+    var maxPage = Math.ceil(total / pageSize) - 1;
+    pager.style.display = 'flex';
+    prevBtn.disabled = _page === 0;
+    nextBtn.disabled = _page >= maxPage;
+    var start = _page * pageSize + 1;
+    var end   = Math.min((_page + 1) * pageSize, total);
+    pageInfo.textContent = start + '–' + end + ' of ' + total;
+  }
+
+  function applyFilter() {
+    var q = (_filter || '').trim().toLowerCase();
+    _data = !q
+      ? _rawData.slice()
+      : _rawData.filter(function (r) {
+          return String(r.name || '').toLowerCase().indexOf(q) >= 0;
+        });
+  }
+
+  function render() {
+    applyFilter();
+    var col = _sort.col, dir = _sort.dir;
+    _data.sort(function (a, b) {
+      var av = a[col], bv = b[col];
+      if (av == null) av = typeof av === 'string' ? '' : -Infinity;
+      if (bv == null) bv = typeof bv === 'string' ? '' : -Infinity;
+      return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
+    });
+
+    // update sort indicators
+    document.querySelectorAll('#playersTable th[data-sort]').forEach(function (th) {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.sort === col) {
+        th.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc');
+      }
+    });
+
+    if (!_data.length) {
+      body.innerHTML = '<tr><td colspan="' + COLS + '" class="center muted-row">No data — try lowering the minimum games filter.</td></tr>';
+      renderPager();
+      return;
+    }
+
+    var total    = _data.length;
+    var pageSize = _pageSize === 0 ? total : _pageSize;
+    var maxPage  = Math.ceil(total / pageSize) - 1;
+    if (_page > maxPage) _page = maxPage;
+    var start = _page * pageSize;
+    var end   = Math.min(start + pageSize, total);
+
+    body.innerHTML = _data.slice(start, end).map(function (r, i) {
+      var rank = start + i + 1;
+      var kd   = r.kd != null ? r.kd : (r.deaths ? r.kills / r.deaths : r.kills || 0);
+      var kdStr = kd.toFixed(2);
+      var kdColor = parseFloat(kd) >= 1 ? 'var(--green)' : 'var(--accent2)';
+      var accVal = r.avg_acc != null ? parseFloat(r.avg_acc) : null;
+      var accCell;
+      if (accVal == null) {
+        accCell = '<td class="num">—</td>';
+      } else {
+        var pct = Math.max(0, Math.min(100, accVal));
+        accCell = '<td class="num acc-cell"><span class="acc-val">' + accVal.toFixed(1) + '%</span>' +
+                  '<span class="acc-bar" style="--acc:' + pct.toFixed(1) + '%"></span></td>';
+      }
+      return '<tr>' +
+        '<td class="num" style="color:var(--muted)">' + rank + '</td>' +
+        '<td>' + playerAnchor(r.name || 'Unknown') + '</td>' +
+        '<td class="num">' + S.fmtNum(r.games) + '</td>' +
+        '<td class="num">' + S.fmtNum(r.kills) + '</td>' +
+        '<td class="num">' + S.fmtNum(r.deaths) + '</td>' +
+        '<td class="num" style="color:' + kdColor + ';font-weight:600;">' + kdStr + '</td>' +
+        '<td class="num">' + S.fmtNum(r.avg_kills, 1) + '</td>' +
+        '<td class="num">' + S.fmtNum(r.damage) + '</td>' +
+        '<td class="num col-impact">' + (r.damage_per_round != null ? S.fmtNum(r.damage_per_round, 1) : '—') + '</td>' +
+        '<td class="num col-impact" style="font-weight:600;">' + (r.impact_score != null ? S.fmtNum(r.impact_score, 1) : '—') + '</td>' +
+        '<td class="num">' + S.fmtNum(r.hs_kills) + '</td>' +
+        accCell +
+        '<td class="num">' + p(r.head_pct, 1) + '</td>' +
+        '<td class="num col-loc-extra">' + p(r.stom_pct, 1) + '</td>' +
+        '<td class="num col-loc-extra">' + p(r.chest_pct, 1) + '</td>' +
+        '<td class="num col-loc-extra">' + p(r.legs_pct, 1) + '</td>' +
+        '<td class="num col-awards">' + (r.awards_impressive != null ? S.fmtNum(r.awards_impressive) : '—') + '</td>' +
+        '<td class="num col-awards">' + (r.awards_accuracy   != null ? S.fmtNum(r.awards_accuracy)   : '—') + '</td>' +
+        '<td class="num col-awards">' + (r.awards_excellent  != null ? S.fmtNum(r.awards_excellent)  : '—') + '</td>' +
+      '</tr>';
+    }).join('');
+    renderPager();
+  }
+
+  function load() {
+    var minGames = minGamesEl ? Number(minGamesEl.value || 5) : 5;
+    body.innerHTML = '<tr><td colspan="' + COLS + '" class="center muted-row">Loading…</td></tr>';
+    S.fetchJson('/api/stats/leaderboard?min_games=' + encodeURIComponent(minGames), filters)
+      .then(function (rows) {
+        _rawData = (rows || []);
+        _rawData.forEach(computeLocPcts);
+        _page = 0;
+        render();
+      })
+      .catch(function () {
+        body.innerHTML = '<tr><td colspan="' + COLS + '" class="center muted-row">Failed to load player data.</td></tr>';
+      });
+  }
+
+  function applyPreset(name) {
+    if (!tableEl) return;
+    tableEl.classList.remove('preset-overview', 'preset-accuracy', 'preset-awards', 'preset-all');
+    tableEl.classList.add('preset-' + (name || 'overview'));
+  }
+
+  // Column sort
+  document.getElementById('playersTable').querySelector('thead').addEventListener('click', function (e) {
+    var th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    var col = th.dataset.sort;
+    if (_sort.col === col) {
+      _sort.dir *= -1;
+    } else {
+      _sort.col = col;
+      _sort.dir = col === 'name' ? 1 : -1;
+    }
+    render();
+  });
+
+  if (minGamesEl) minGamesEl.addEventListener('change', load);
+
+  if (presetEl) {
+    presetEl.addEventListener('change', function () {
+      applyPreset(this.value);
+    });
+  }
+
+  if (searchEl) {
+    var searchTimer = null;
+    searchEl.addEventListener('input', function () {
+      clearTimeout(searchTimer);
+      var val = this.value;
+      searchTimer = setTimeout(function () {
+        _filter = val;
+        _page = 0;
+        render();
+      }, 120);
+    });
+  }
+
+  if (pageSizeEl) {
+    pageSizeEl.addEventListener('change', function () {
+      _pageSize = parseInt(this.value, 10);
+      _page = 0;
+      render();
+    });
+  }
+
+  if (prevBtn) prevBtn.addEventListener('click', function () {
+    if (_page > 0) { _page--; render(); }
+  });
+  if (nextBtn) nextBtn.addEventListener('click', function () {
+    var total    = _data.length;
+    var pageSize = _pageSize === 0 ? total : _pageSize;
+    if (_page < Math.ceil(total / pageSize) - 1) { _page++; render(); }
+  });
+
+  load();
+})();
+</script>
+{% endblock %}

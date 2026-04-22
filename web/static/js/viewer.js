@@ -63,17 +63,21 @@ function makeProjection(geo, canvasW, canvasH, pad) {
 // ── Textured top-view overlay ───────────────────────────────────────────────
 
 /**
- * Draw the server-rendered textured PNG aligned to the current canvas projection.
- * tvParams = {img_size, scale, off_x, off_y}  (from /api/map/X/topview.json)
+ * Draw the server-rendered SVG aligned to the current canvas projection.
+ * tvParams = {format:'svg', min_x, max_x, min_y, max_y}  (from /api/map/X/topview.json)
+ *
+ * The SVG viewBox uses the same world coordinates as the canvas projection, so
+ * we simply map the world corners to canvas pixels and drawImage between them.
  */
 function drawTopview(ctx, topviewImg, tvParams, proj) {
-  const ratio = proj.scale / tvParams.scale;
-  const dx = proj.offX - tvParams.off_x * ratio;
-  const dy = proj.offY - tvParams.off_y * ratio;
-  const dw = tvParams.img_size * ratio;
+  // Map the SVG's world-space corners to canvas pixel coordinates.
+  // Top-left of the image  = world (min_x, max_y)  (highest Y = north = top of screen)
+  // Bottom-right           = world (max_x, min_y)
+  const [dx,  dy]  = proj.toCanvas(tvParams.min_x, tvParams.max_y);
+  const [dx2, dy2] = proj.toCanvas(tvParams.max_x, tvParams.min_y);
   ctx.save();
   ctx.globalAlpha = 0.88;
-  ctx.drawImage(topviewImg, dx, dy, dw, dw);
+  ctx.drawImage(topviewImg, dx, dy, dx2 - dx, dy2 - dy);
   ctx.restore();
 }
 
@@ -319,7 +323,10 @@ function drawReplay(canvas, geo, frame, replayData, hiddenPlayers, topview, kill
 const _replayBoundsCache = new WeakMap();
 
 function getReplayBounds(replayData) {
-  if (_replayBoundsCache.has(replayData)) return _replayBoundsCache.get(replayData);
+  // Skip cache for live data (_live flag) so accumulated position bounds are
+  // always current; also honour an explicit _bounds override (live viewer).
+  if (replayData._bounds) return replayData._bounds;
+  if (!replayData._live && _replayBoundsCache.has(replayData)) return _replayBoundsCache.get(replayData);
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   let found = false;
   for (const frame of (replayData.frames || [])) {
@@ -334,7 +341,7 @@ function getReplayBounds(replayData) {
   const bounds = found
     ? { min_x: minX, max_x: maxX, min_y: minY, max_y: maxY }
     : { min_x: -500, max_x: 500, min_y: -500, max_y: 500 };
-  _replayBoundsCache.set(replayData, bounds);
+  if (!replayData._live) _replayBoundsCache.set(replayData, bounds);
   return bounds;
 }
 

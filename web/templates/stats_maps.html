@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}Map Stats — AQ2{% endblock %}
+
+{% block content %}
+{% set active_stats_page = 'maps' %}
+{% include "_stats_nav.html" %}
+
+<div class="card">
+  <div class="stats-section-head">
+    <h2>Map Performance</h2>
+    <div class="stats-inline-controls">
+      <label class="stats-control compact">
+        <span class="help-label" title="Case-insensitive map name filter, applied client-side.">Search</span>
+        <input id="mapsSearch" type="search" placeholder="map name…"
+               style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:.2rem .45rem;font-size:.78rem;min-width:9rem;">
+      </label>
+      <label class="stats-control compact">
+        <span>Per page</span>
+        <select id="mapsPageSize">
+          <option value="25" selected>25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="0">All</option>
+        </select>
+      </label>
+    </div>
+  </div>
+  <div style="overflow-x:auto;">
+    <table id="mapsTable">
+      <thead>
+        <tr>
+          <th class="sortable help-label" data-sort="map" title="Map name.">Map</th>
+          <th class="num sortable help-label" data-sort="matches" title="Total matches played on this map.">Matches</th>
+          <th class="num sortable help-label" data-sort="kills" title="Total recorded kills on this map.">Total Kills</th>
+          <th class="num sortable help-label" data-sort="avg_kills" title="Average total kills per match on this map.">Avg K/Match</th>
+          <th class="num sortable help-label" data-sort="players" title="Distinct players seen on this map.">Players</th>
+          <th class="num sortable help-label" data-sort="avg_duration_min" title="Average match duration.">Avg Duration</th>
+          <th class="num sortable help-label" data-sort="avg_round_seconds" title="Average round duration in seconds across all rounds played on this map.">Avg Round</th>
+          <th class="num sortable help-label" data-sort="fk_win_rate" title="How often the team that gets the first kill in a round also wins that round, expressed as a percentage.">FK Win%</th>
+          <th class="num sortable help-label" data-sort="balance_score" title="How fairly teams split wins on this map. 100 = perfectly balanced, 0 = one team wins every match.">Balance</th>
+          <th class="num sortable help-label" data-sort="t1_wins" title="Matches won by Team 1." style="color:var(--t1)">T1 W</th>
+          <th class="num sortable help-label" data-sort="t2_wins" title="Matches won by Team 2." style="color:var(--t2)">T2 W</th>
+          <th class="num sortable help-label" data-sort="draws" title="Matches ending tied." style="color:var(--muted)">Draws</th>
+        </tr>
+      </thead>
+      <tbody id="mapsTableBody">
+        <tr><td colspan="12" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="tbl-pager" id="mapsPager" style="display:none;">
+    <button id="mapsPrevBtn">← Prev</button>
+    <span id="mapsPageInfo"></span>
+    <button id="mapsNextBtn">Next →</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  var S = window.AQ2Stats;
+  if (!S) return;
+
+  var filters  = S.bindFilters();
+  S.initStatusBadge({ badgeId: 'statusBadge' });
+
+  var body     = document.getElementById('mapsTableBody');
+  var pager    = document.getElementById('mapsPager');
+  var prevBtn  = document.getElementById('mapsPrevBtn');
+  var nextBtn  = document.getElementById('mapsNextBtn');
+  var pageInfo = document.getElementById('mapsPageInfo');
+  var pageSizeEl = document.getElementById('mapsPageSize');
+  var searchEl   = document.getElementById('mapsSearch');
+
+  var _rawData  = [];
+  var _data     = [];
+  var _wrMap    = {};
+  var _sort     = { col: 'balance_score', dir: -1 };
+  var _page     = 0;
+  var _pageSize = 25;
+  var _filter   = '';
+
+  function computeBalance(r) {
+    var w = _wrMap[r.map] || {};
+    var t1 = Number(w.t1_wins || 0);
+    var t2 = Number(w.t2_wins || 0);
+    var dr = Number(w.draws || 0);
+    var total = t1 + t2 + dr;
+    if (!total) { r.balance_score = null; return; }
+    var skew = Math.abs(t1 - t2) / total;
+    r.balance_score = (1 - skew) * 100;
+  }
+
+  function applyMapFilter() {
+    var q = (_filter || '').trim().toLowerCase();
+    _data = !q
+      ? _rawData.slice()
+      : _rawData.filter(function (r) {
+          return String(r.map || '').toLowerCase().indexOf(q) >= 0;
+        });
+  }
+
+  function renderPager() {
+    var total    = _data.length;
+    var pageSize = _pageSize === 0 ? total : _pageSize;
+    if (total === 0 || pageSize >= total) { pager.style.display = 'none'; return; }
+    var maxPage = Math.ceil(total / pageSize) - 1;
+    pager.style.display = 'flex';
+    prevBtn.disabled = _page === 0;
+    nextBtn.disabled = _page >= maxPage;
+    pageInfo.textContent = (_page * pageSize + 1) + '–' + Math.min((_page + 1) * pageSize, total) + ' of ' + total;
+  }
+
+  function render() {
+    applyMapFilter();
+    var col = _sort.col, dir = _sort.dir;
+    var pickField = function (row, winRow) {
+      if (row && row[col] != null) return row[col];
+      if (winRow && col in winRow) return winRow[col];
+      return null;
+    };
+    _data.sort(function (a, b) {
+      var aw = _wrMap[a.map] || {}, bw = _wrMap[b.map] || {};
+      var av = pickField(a, aw);
+      var bv = pickField(b, bw);
+      if (av == null) av = col === 'map' ? '' : -Infinity;
+      if (bv == null) bv = col === 'map' ? '' : -Infinity;
+      return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
+    });
+
+    document.querySelectorAll('#mapsTable th[data-sort]').forEach(function (th) {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.sort === col) th.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc');
+    });
+
+    if (!_data.length) {
+      body.innerHTML = '<tr><td colspan="12" class="center muted-row">No map data found.</td></tr>';
+      renderPager();
+      return;
+    }
+
+    var total    = _data.length;
+    var pageSize = _pageSize === 0 ? total : _pageSize;
+    var maxPage  = Math.ceil(total / pageSize) - 1;
+    if (_page > maxPage) _page = maxPage;
+    var start = _page * pageSize;
+    var end   = Math.min(start + pageSize, total);
+
+    var THUMB_BASE = 'https://raw.githubusercontent.com/vrolse/AQ2-pickup-bot/main/thumbnails/';
+
+    // Determine round-pace range across filtered data for color gradient
+    var roundVals = _data
+      .map(function (r) { return Number(r.avg_round_seconds); })
+      .filter(function (v) { return isFinite(v) && v > 0; });
+    var rMin = roundVals.length ? Math.min.apply(null, roundVals) : 0;
+    var rMax = roundVals.length ? Math.max.apply(null, roundVals) : 0;
+    var rRange = rMax - rMin;
+
+    function roundColor(sec) {
+      if (sec == null || !isFinite(sec) || rRange <= 0) return 'var(--muted)';
+      var t = Math.max(0, Math.min(1, (sec - rMin) / rRange));
+      var hue = 140 - t * 130;
+      return 'hsl(' + hue.toFixed(0) + ', 72%, 60%)';
+    }
+
+    function balanceColor(b) {
+      if (b == null) return 'var(--muted)';
+      if (b >= 75) return 'var(--green)';
+      if (b >= 50) return 'var(--yellow)';
+      return 'var(--accent2)';
+    }
+
+    body.innerHTML = _data.slice(start, end).map(function (r) {
+      var w = _wrMap[r.map] || {};
+      var mapUrl  = '/map/' + encodeURIComponent(r.map || '');
+      var thumbSrc = THUMB_BASE + encodeURIComponent((r.map || '').toLowerCase()) + '.jpg';
+      var roundTxt = r.avg_round_seconds != null ? parseFloat(r.avg_round_seconds).toFixed(1) + 's' : '—';
+      var roundCol = roundColor(r.avg_round_seconds);
+      var balTxt = r.balance_score != null ? parseFloat(r.balance_score).toFixed(0) + '%' : '—';
+      var balCol = balanceColor(r.balance_score);
+      return '<tr>' +
+        '<td style="white-space:nowrap;">' +
+          '<img src="' + thumbSrc + '" loading="lazy" width="56" height="35" alt="" ' +
+            'style="border-radius:3px;object-fit:cover;vertical-align:middle;margin-right:.5rem;" ' +
+            'onerror="this.style.display=\'none\'">' +
+          '<a href="' + mapUrl + '">' + S.escHtml(r.map || 'unknown') + '</a>' +
+        '</td>' +
+        '<td class="num">' + S.fmtNum(r.matches) + '</td>' +
+        '<td class="num">' + S.fmtNum(r.kills) + '</td>' +
+        '<td class="num">' + S.fmtNum(r.avg_kills, 1) + '</td>' +
+        '<td class="num">' + S.fmtNum(r.players) + '</td>' +
+        '<td class="num">' + (r.avg_duration_min != null ? Math.round(r.avg_duration_min) + ' min' : '—') + '</td>' +
+        '<td class="num" style="color:' + roundCol + ';font-weight:600;">' + roundTxt + '</td>' +
+        '<td class="num">' + (r.fk_win_rate != null ? parseFloat(r.fk_win_rate).toFixed(1) + '%' : '—') + '</td>' +
+        '<td class="num" style="color:' + balCol + ';font-weight:600;">' + balTxt + '</td>' +
+        '<td class="num" style="color:var(--t1)">' + (w.t1_wins != null ? w.t1_wins : '—') + '</td>' +
+        '<td class="num" style="color:var(--t2)">' + (w.t2_wins != null ? w.t2_wins : '—') + '</td>' +
+        '<td class="num" style="color:var(--muted)">' + (w.draws != null ? w.draws : '—') + '</td>' +
+      '</tr>';
+    }).join('');
+    renderPager();
+  }
+
+  document.getElementById('mapsTable').querySelector('thead').addEventListener('click', function (e) {
+    var th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    var col = th.dataset.sort;
+    if (_sort.col === col) { _sort.dir *= -1; } else { _sort.col = col; _sort.dir = col === 'map' ? 1 : -1; }
+    _page = 0;
+    render();
+  });
+
+  if (pageSizeEl) pageSizeEl.addEventListener('change', function () {
+    _pageSize = parseInt(this.value, 10); _page = 0; render();
+  });
+  if (searchEl) {
+    var mapsSearchTimer = null;
+    searchEl.addEventListener('input', function () {
+      clearTimeout(mapsSearchTimer);
+      var val = this.value;
+      mapsSearchTimer = setTimeout(function () {
+        _filter = val;
+        _page = 0;
+        render();
+      }, 120);
+    });
+  }
+  if (prevBtn) prevBtn.addEventListener('click', function () { if (_page > 0) { _page--; render(); } });
+  if (nextBtn) nextBtn.addEventListener('click', function () {
+    var total = _data.length, ps = _pageSize === 0 ? total : _pageSize;
+    if (_page < Math.ceil(total / ps) - 1) { _page++; render(); }
+  });
+
+  Promise.all([
+    S.fetchJson('/api/stats/maps', filters),
+    S.fetchJson('/api/stats/map-win-rates', filters)
+  ]).then(function (results) {
+    _rawData = results[0] || [];
+    _wrMap = {};
+    (results[1] || []).forEach(function (r) { _wrMap[r.map] = r; });
+    _rawData.forEach(computeBalance);
+    render();
+  }).catch(function () {
+    body.innerHTML = '<tr><td colspan="12" class="center muted-row">Failed to load map stats.</td></tr>';
+  });
+})();
+</script>
+{% endblock %}

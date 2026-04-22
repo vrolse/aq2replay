@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Weapons — AQ2{% endblock %}
+
+{% block content %}
+{% set active_stats_page = 'weapons' %}
+{% include "_stats_nav.html" %}
+
+<!-- ── Weapon effectiveness summary ────────────────────────── -->
+<div class="card" style="margin-bottom:.7rem;">
+  <div class="stats-section-head" style="margin-bottom:.65rem;">
+    <h2>Weapon Effectiveness</h2>
+  </div>
+  <div class="mini-grid" id="waGrid">
+    <div class="mini-stat"><span class="help-label" title="Enemy kills (team kills excluded).">Total Enemy Kills</span><strong id="waTotalKills">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Distinct weapons seen in this filter.">Weapons Used</span><strong id="waWeaponCount">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Maps with weapon-level data.">Maps Covered</span><strong id="waMapCount">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Win-rate proxy derived from weapon outcomes.">Global Weapon Win Rate</span><strong id="waWinRate">—</strong></div>
+  </div>
+</div>
+
+<!-- ── Weapon breakdown table ─────────────────────────────── -->
+<div class="card" style="margin-bottom:.7rem;">
+  <div class="stats-section-head">
+    <h2>Weapon Breakdown</h2>
+  </div>
+  <div style="overflow-x:auto;">
+    <table id="weaponTable">
+      <thead>
+        <tr>
+          <th class="sortable help-label" data-sort="weapon" title="Weapon name.">Weapon</th>
+          <th class="num sortable help-label" data-sort="kills" title="Total kills with this weapon.">Kills</th>
+          <th class="num sortable help-label" data-sort="kill_pct" title="Share of all kills made by this weapon.">Kill %</th>
+          <th class="num sortable help-label" data-sort="hs" title="Headshot kills.">HS Kills</th>
+          <th class="num sortable help-label" data-sort="hs_pct" title="Headshot percentage.">HS %</th>
+          <th class="help-label" style="min-width:100px;" title="Visual share of total kills.">Share</th>
+        </tr>
+      </thead>
+      <tbody id="weaponTableBody">
+        <tr><td colspan="6" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Weapon map leaders ──────────────────────────────────── -->
+<div class="card">
+  <div class="stats-section-head">
+    <h2>Best Weapon by Map</h2>
+    <span class="muted-note">Weapon with most kills on each map.</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table id="weaponMapTable">
+      <thead>
+        <tr>
+          <th class="help-label" title="Map name.">Map</th>
+          <th class="help-label" title="Weapon dominating this map.">Best Weapon</th>
+          <th class="num help-label" title="Kill count for this weapon on this map.">Kills</th>
+          <th class="num help-label" title="Headshot percentage for this weapon on this map.">HS%</th>
+          <th class="num help-label" title="Win-rate proxy when this weapon secures kills.">Win%</th>
+        </tr>
+      </thead>
+      <tbody id="weaponMapBody">
+        <tr><td colspan="5" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  var S = window.AQ2Stats;
+  if (!S) return;
+
+  var filters = S.bindFilters();
+  S.initStatusBadge({ badgeId: 'statusBadge' });
+
+  function set(id, v) { var e = document.getElementById(id); if (e) e.textContent = v; }
+
+  // ── Weapon breakdown ──────────────────────────────────────
+  var _wData = [];
+  var _wSort = { col: 'hs_pct', dir: -1 };
+
+  function renderWeapons() {
+    var col = _wSort.col, dir = _wSort.dir;
+    var totalK = _wData.reduce(function (s, d) { return s + (Number(d.kills) || 0); }, 0);
+    _wData.forEach(function (r) {
+      r.kill_pct = totalK ? (Number(r.kills) || 0) / totalK * 100 : null;
+      r.hs_pct   = r.kills ? (Number(r.hs) || 0) / Number(r.kills) * 100 : null;
+    });
+    _wData.sort(function (a, b) {
+      var av = a[col], bv = b[col];
+      if (av == null) av = col === 'weapon' ? '' : -Infinity;
+      if (bv == null) bv = col === 'weapon' ? '' : -Infinity;
+      return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
+    });
+
+    document.querySelectorAll('#weaponTable th[data-sort]').forEach(function (th) {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.sort === col) th.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc');
+    });
+
+    var body = document.getElementById('weaponTableBody');
+    if (!_wData.length) {
+      body.innerHTML = '<tr><td colspan="6" class="center muted-row">No weapon data yet.</td></tr>';
+      return;
+    }
+    var maxK = Math.max.apply(null, _wData.map(function (d) { return Number(d.kills) || 0; }));
+    body.innerHTML = _wData.map(function (r) {
+      var barW  = maxK ? Math.round((Number(r.kills) || 0) / maxK * 100) : 0;
+      var wpUrl = '/weapon/' + encodeURIComponent(r.weapon || '');
+      return '<tr>' +
+        '<td><a href="' + wpUrl + '">' + S.escHtml(r.weapon || 'unknown') + '</a></td>' +
+        '<td class="num">' + S.fmtNum(r.kills) + '</td>' +
+        '<td class="num">' + (r.kill_pct != null ? r.kill_pct.toFixed(1) + '%' : '—') + '</td>' +
+        '<td class="num">' + S.fmtNum(r.hs) + '</td>' +
+        '<td class="num">' + (r.hs_pct != null ? r.hs_pct.toFixed(1) + '%' : '—') + '</td>' +
+        '<td><div class="bar-outer"><div class="bar-inner" style="width:' + barW + '%"></div></div></td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  document.getElementById('weaponTable').querySelector('thead').addEventListener('click', function (e) {
+    var th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    var col = th.dataset.sort;
+    if (_wSort.col === col) { _wSort.dir *= -1; } else { _wSort.col = col; _wSort.dir = col === 'weapon' ? 1 : -1; }
+    renderWeapons();
+  });
+
+  S.fetchJson('/api/stats/weapons', filters).then(function (data) {
+    _wData = data || [];
+    renderWeapons();
+  }).catch(function () {
+    document.getElementById('weaponTableBody').innerHTML =
+      '<tr><td colspan="6" class="center muted-row">Failed to load weapon stats.</td></tr>';
+  });
+
+  // ── Weapon effectiveness + map leaders ────────────────────
+  S.fetchJson('/api/stats/weapon-analytics?limit=30', filters).then(function (d) {
+    var s = d.summary || {};
+    set('waTotalKills',  S.fmtNum(s.total_enemy_kills));
+    set('waWeaponCount', S.fmtNum(s.weapon_count));
+    set('waMapCount',    S.fmtNum(s.map_count));
+    set('waWinRate',     s.global_weapon_win_rate != null ? parseFloat(s.global_weapon_win_rate).toFixed(1) + '%' : '—');
+
+    var body = document.getElementById('weaponMapBody');
+    var rows = d.map_leaders || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="5" class="center muted-row">No weapon-map analytics yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function (r) {
+      return '<tr>' +
+        '<td><a href="/map/' + encodeURIComponent(r.map || '') + '">' + S.escHtml(r.map || 'unknown') + '</a></td>' +
+        '<td><a href="/weapon/' + encodeURIComponent(r.weapon || '') + '">' + S.escHtml(r.weapon || 'unknown') + '</a></td>' +
+        '<td class="num">' + S.fmtNum(r.kills) + '</td>' +
+        '<td class="num">' + (r.hs_pct != null ? parseFloat(r.hs_pct).toFixed(1) + '%' : '—') + '</td>' +
+        '<td class="num">' + (r.win_rate != null ? parseFloat(r.win_rate).toFixed(1) + '%' : '—') + '</td>' +
+      '</tr>';
+    }).join('');
+  }).catch(function () {
+    document.getElementById('weaponMapBody').innerHTML =
+      '<tr><td colspan="5" class="center muted-row">Failed to load weapon analytics.</td></tr>';
+  });
+})();
+</script>
+{% endblock %}

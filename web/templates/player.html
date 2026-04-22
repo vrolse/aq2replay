@@ -1,0 +1,1108 @@
+{% extends "base.html" %}
+{% block title %}{{ player_name }} — AQ2{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.4rem;flex-wrap:wrap;">
+  <a href="/stats" style="color:var(--muted);font-size:.85rem;">← Stats</a>
+  <h1 style="font-size:1.4rem;font-weight:700;" id="playerHeading">{{ player_name }}</h1>
+  <div id="formDots" style="display:flex;gap:3px;align-items:center;" title="Recent form (last 10 matches)"></div>
+  <label style="font-size:.78rem;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:.4rem;margin-left:auto;">
+    Period:
+    <select id="periodFilter"
+      style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+             border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+      <option value="this_week">This Week</option>
+      <option value="last_week">Last Week</option>
+      <option value="this_month">This Month</option>
+      <option value="last_month">Last Month</option>
+      <option value="this_year" selected>This Year</option>
+      <option value="last_year">Last Year</option>
+      <option value="all">All Time</option>
+    </select>
+  </label>
+  <span id="playerDates" style="font-size:.8rem;color:var(--muted);"></span>
+</div>
+
+<!-- Achievement badges -->
+<div id="achievementBadges" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1.2rem;min-height:0;"></div>
+
+<!-- ── Career summary ── -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.7rem;margin-bottom:.9rem;" id="careerGrid">
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="p-games">—</div>
+    <div class="stat-label help-label" title="Matches played in the selected period.">Games</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="p-kills">—</div>
+    <div class="stat-label help-label" title="Total kills in the selected period.">Kills</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="p-deaths">—</div>
+    <div class="stat-label help-label" title="Total deaths in the selected period.">Deaths</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="p-kd">—</div>
+    <div class="stat-label help-label" title="Kills divided by deaths.">K/D</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="p-damage">—</div>
+    <div class="stat-label help-label" title="Estimated total damage dealt.">Damage</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="p-acc">—</div>
+    <div class="stat-label help-label" title="Average accuracy percentage.">Avg Acc%</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="p-hs">—</div>
+    <div class="stat-label help-label" title="Headshot kills.">HS Kills</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" style="color:var(--green)" id="p-best">—</div>
+    <div class="stat-label help-label" title="Highest single-match kill count.">Best Game</div>
+  </div>
+</div>
+
+<div id="careerLists" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.7rem;margin-bottom:1.6rem;">
+  <div class="card list-card">
+    <div class="list-title">Performance</div>
+    <div class="stat-list">
+      <div class="stat-row"><span class="help-label" title="Average damage dealt per match.">Avg Damage / Game</span><span id="p-avgdmg">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Kills per minute of playtime.">Frags / Minute</span><span id="p-fpm">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Distinct maps played in the selected filter.">Maps Played</span><span id="p-maps">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Total time spent in tracked matches.">Total Playtime</span><span id="p-playtime">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Longest kill streak in a single match.">Best Streak</span><span id="p-streak">—</span></div>
+    </div>
+  </div>
+
+  <div class="card list-card">
+    <div class="list-title">Awards</div>
+    <div class="stat-list">
+      <div class="stat-row"><span class="help-label" title="Impressive awards (typically 5 kill streak).">Impressive</span><span id="p-impressive">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Accuracy awards (typically 3 consecutive headshots).">Accuracy</span><span id="p-accuracy-award">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Excellent awards (typically 12 kill streak).">Excellent</span><span id="p-excellent">—</span></div>
+    </div>
+  </div>
+
+  <div class="card list-card">
+    <div class="list-title">Results</div>
+    <div class="stat-list">
+      <div class="stat-row"><span class="help-label" title="Tracked matches where your side won.">Wins</span><span id="p-wins" style="color:var(--green)">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Tracked matches ending in a draw.">Draws</span><span id="p-draws" style="color:var(--muted)">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Tracked matches where your side lost.">Losses</span><span id="p-losses" style="color:var(--accent2)">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Win percentage over tracked matches (wins / tracked games).">Win Rate</span><span id="p-winpct">—</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Round impact metrics ── -->
+<div class="section-title" style="margin-top:0;">Round Impact</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.7rem;margin-bottom:1.3rem;">
+  <div class="card list-card">
+    <div class="list-title">Round Rates</div>
+    <div class="stat-list">
+      <div class="stat-row"><span class="help-label" title="Number of matches in this filter that include detailed round-level tracking.">Matches (round-tracked)</span><span id="pr-matches">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Total number of rounds you played in those tracked matches.">Rounds</span><span id="pr-rounds">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Average kills per round: total round kills divided by rounds played.">Kills / Round</span><span id="pr-kpr">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Average assists per round. Includes both verified and estimated assists.">Assists / Round</span><span id="pr-apr">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Average damage dealt per round.">Damage / Round</span><span id="pr-dpr">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Composite impact metric per round using kills, assists, damage, first kills, survival, and deaths.">Impact Score v1</span><span id="pr-impact">—</span></div>
+    </div>
+  </div>
+  <div class="card list-card">
+    <div class="list-title">Round Outcomes</div>
+    <div class="stat-list">
+      <div class="stat-row"><span class="help-label" title="Percent of rounds where your team won while you were participating.">Round Win Rate</span><span id="pr-winrate">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Percent of rounds where you survived to round end.">Survival Rate</span><span id="pr-survival">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Percent of rounds where you got the first kill.">First Kill Rate</span><span id="pr-fkrate">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Percent of rounds where you were first to die.">First Death Rate</span><span id="pr-fdrate">—</span></div>
+      <div class="stat-row"><span class="help-label" title="When you get first kill, this is the percent of those rounds your team converts into a win.">FK Conversion Rate</span><span id="pr-fkconv">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Assists split as Verified / Estimated. Verified = clear victim match before kill. Estimated = inferred from identity matching.">Assists (V / E)</span><span id="pr-assists-split">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Percent of rounds your team won while having fewer survivors than the enemy — coming back against the odds.">Clutch Win Rate</span><span id="pr-clutchrate">—</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Multi-kill breakdown ── -->
+<div class="section-title" style="margin-top:0;">Multi-Kill Rounds</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.7rem;margin-bottom:1.3rem;">
+  <div class="card list-card">
+    <div class="list-title">Kill Streaks Per Round</div>
+    <div class="stat-list">
+      <div class="stat-row"><span class="help-label" title="Total rounds tracked for multi-kill analysis.">Rounds tracked</span><span id="mk-rounds">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Rounds where you got exactly 2 kills.">Double Kill (2K)</span><span id="mk-2k">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Rounds where you got exactly 3 kills.">Triple Kill (3K)</span><span id="mk-3k">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Rounds where you got 4 or more kills.">Quad+ Kill (4K+)</span><span id="mk-4k">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Percent of rounds where you got exactly 2 kills.">2K Rate</span><span id="mk-2k-rate">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Percent of rounds where you got exactly 3 kills.">3K Rate</span><span id="mk-3k-rate">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Percent of rounds where you got 4 or more kills.">4K+ Rate</span><span id="mk-4k-rate">—</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Competitive profile ── -->
+<div class="section-title" style="margin-top:.3rem;">Competitive Profile</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.7rem;margin-bottom:1.3rem;">
+  <div class="card list-card">
+    <div class="list-title">Rating + Consistency</div>
+    <div class="stat-list">
+      <div class="stat-row"><span class="help-label" title="Current rating estimate based on recent match performance.">Current Rating</span><span id="cp-rating">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Rating deviation (uncertainty). Lower means the rating is more stable/confident.">Uncertainty (RD)</span><span id="cp-rd">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Your rank position on the current filtered rating leaderboard.">Leaderboard Rank</span><span id="cp-rank">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Higher score means more repeatable match-to-match performance.">Consistency Score</span><span id="cp-consistency">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Spread of performance values. Lower usually means steadier output.">Skill Variance</span><span id="cp-variance">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Average recent rating change (delta). Positive means trending up.">Recent Trend</span><span id="cp-trend">—</span></div>
+      <div class="stat-row"><span class="help-label" title="Number of matches in this filter against high-rated opposition.">High-Skill Matches</span><span id="cp-highskill">—</span></div>
+    </div>
+  </div>
+  <div class="card list-card">
+    <div class="list-title">
+      Playstyle Classification
+      <button type="button" id="cp-profile-info" aria-label="Show playstyle descriptions"
+        style="margin-left:.4rem;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:999px;width:1.15rem;height:1.15rem;line-height:1;font-size:.72rem;cursor:pointer;padding:0;vertical-align:middle;">?</button>
+    </div>
+    <div class="stat-list">
+      <div class="stat-row"><span class="help-label" title="Detected playstyle archetype from your round-level behavior. Click the ? above to see all types.">Profile</span><span id="cp-profile">—</span></div>
+      <div class="stat-row"><span class="help-label" title="How strongly your data matches the assigned profile. Grows with more games played.">Confidence</span><span id="cp-confidence">—</span></div>
+      <div class="stat-row"><span class="help-label" title="0–100 composite. Contribution caps: kills/round ×20 (max +45), first-kill % ×0.5 (max +20), distance/round ÷8 (max +25), minus first-death % ×0.25 (max −15). Clamped to 0–100.">Aggression Index</span><span id="cp-aggression">—</span></div>
+      <div class="stat-row"><span class="help-label" title="World-unit distance summed only from frames inside active round windows (LIGHTS → round end), divided by rounds played. Warmup and post-round scoreboard movement are excluded.">Distance / Round</span><span id="cp-distance">—</span></div>
+      <div class="stat-row"><span class="help-label" title="World-unit distance summed only from rounds where you got at least one kill, divided by total kills. Rounds with 0 kills (early deaths, whiffs) are excluded so the ratio reflects travel spent securing a kill, not wasted movement. Low = efficient rusher, high = positional / rotator / clutcher. Blank for players with zero kills.">Distance / Kill</span><span id="cp-distance-per-kill">—</span></div>
+    </div>
+    <div id="cpRatingChart" style="display:flex;align-items:flex-end;gap:3px;height:70px;overflow-x:auto;margin-top:.65rem;"></div>
+    <div id="cpRatingLegend" style="font-size:.72rem;color:var(--muted);margin-top:.35rem;">Loading rating trend...</div>
+  </div>
+</div>
+
+<!-- ── Two-column: hit locations + rivals ── -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.4rem;">
+
+  <!-- Hit location breakdown -->
+  <div>
+    <div class="section-title" style="margin-top:0">Hit Locations (career)</div>
+    <div class="card" style="padding:.9rem 1.2rem;">
+      <div id="hitLocBars"></div>
+    </div>
+  </div>
+
+  <!-- Rivals -->
+  <div>
+    <div class="section-title" style="margin-top:0">Rivals</div>
+    <div class="card" style="padding:.9rem 1.2rem;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+        <div>
+          <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:.5rem;">Nemesis (kills you)</div>
+          <div id="nemesisList" style="font-size:.85rem;"></div>
+        </div>
+        <div>
+          <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:.5rem;">Prey (you kill)</div>
+          <div id="preyList" style="font-size:.85rem;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Activity chart ── -->
+<div class="section-title" style="margin-top:1.5rem;">Activity</div>
+<div class="card" style="padding:1rem 1.2rem;">
+  <div id="playerActivityChart" style="display:flex;align-items:flex-end;gap:3px;height:60px;overflow-x:auto;"></div>
+  <div id="playerActivityLegend" style="font-size:.72rem;color:var(--muted);margin-top:.4rem;text-align:center;"></div>
+  <div id="playerActivityWeekFilter" style="display:none;align-items:center;justify-content:center;gap:.55rem;margin-top:.45rem;">
+    <span id="playerActivityWeekFilterText" style="font-size:.74rem;color:var(--muted);"></span>
+    <button id="playerActivityWeekFilterClear" type="button"
+      style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:.12rem .5rem;border-radius:var(--radius);cursor:pointer;font-size:.72rem;">Clear</button>
+  </div>
+</div>
+
+<!-- ── Weapon stats ── -->
+<div class="section-title" style="margin-top:1.5rem;">Weapons</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="weaponTable">
+    <thead>
+      <tr>
+        <th data-sort="weapon" class="sortable help-label" title="Weapon name.">Weapon</th>
+        <th data-sort="kills"  class="num sortable help-label" title="Total kills with this weapon.">Kills</th>
+        <th data-sort="hs"     class="num sortable help-label" title="Headshot kills with this weapon.">HS Kills</th>
+        <th data-sort="hs_pct" class="num sortable help-label" title="Headshot percentage for this weapon.">HS%</th>
+        <th class="help-label" style="width:30%" title="Visual bar showing this weapon's kill share.">Share</th>
+      </tr>
+    </thead>
+    <tbody id="weaponBody">
+      <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1.2rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Map breakdown ── -->
+<div class="section-title" style="margin-top:2rem;">Maps</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="mapTable">
+    <thead>
+      <tr>
+        <th data-sort="map"        class="sortable help-label" title="Map name.">Map</th>
+        <th data-sort="games"      class="num sortable help-label" title="Matches played on this map.">Games</th>
+        <th data-sort="kills"      class="num sortable help-label" title="Total kills on this map.">Kills</th>
+        <th data-sort="deaths"     class="num sortable help-label" title="Total deaths on this map.">Deaths</th>
+        <th data-sort="kd"         class="num sortable help-label" title="Kills divided by deaths on this map.">K/D</th>
+        <th data-sort="avg_kills"  class="num sortable help-label" title="Average kills per match on this map.">Avg K</th>
+        <th data-sort="damage"     class="num sortable help-label" title="Estimated total damage on this map.">Damage</th>
+        <th data-sort="avg_damage" class="num sortable help-label" title="Average damage per match on this map.">Avg Dmg</th>
+      </tr>
+    </thead>
+    <tbody id="mapBody">
+      <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:1.2rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+<div style="display:flex;justify-content:center;align-items:center;gap:.45rem;flex-wrap:wrap;margin-top:.6rem;">
+  <button id="mapPrevBtn" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:.3rem .8rem;border-radius:var(--radius);cursor:pointer;font-size:.82rem;">Prev</button>
+  <span id="mapPageInfo" style="font-size:.82rem;color:var(--muted);min-width:5rem;text-align:center;">Page 1 / 1</span>
+  <button id="mapNextBtn" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:.3rem .8rem;border-radius:var(--radius);cursor:pointer;font-size:.82rem;">Next</button>
+  <button id="mapShowMoreBtn" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:.3rem 1rem;border-radius:var(--radius);cursor:pointer;font-size:.82rem;">Show More</button>
+</div>
+
+<!-- ── Match history ── -->
+<div class="section-title" style="margin-top:2rem;">Match History</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="histTable">
+    <thead>
+      <tr>
+        <th data-sort="played_at"          class="sortable help-label" title="Match date.">Date</th>
+        <th data-sort="map"                class="sortable help-label" title="Map played.">Map</th>
+        <th class="num help-label" title="Final round score (Team 1 - Team 2).">Score</th>
+        <th class="num help-label" style="width:2.5rem" title="Win/Loss result for this player in the match.">W/L</th>
+        <th data-sort="kills"              class="num sortable help-label" title="Kills in this match.">Kills</th>
+        <th data-sort="deaths"             class="num sortable help-label" title="Deaths in this match.">Deaths</th>
+        <th data-sort="kd"                 class="num sortable help-label" title="Kills divided by deaths for this match.">K/D</th>
+        <th data-sort="damage"             class="num sortable help-label" title="Estimated damage dealt in this match.">Damage</th>
+        <th data-sort="accuracy"           class="num sortable help-label" title="Accuracy percentage in this match.">Acc%</th>
+        <th data-sort="hs_kills"           class="num sortable help-label" title="Headshot kills in this match.">HS</th>
+        <th data-sort="duration"           class="num sortable help-label" title="Match duration.">Duration</th>
+        <th data-sort="awards_impressive"  class="num sortable help-label" title="Impressive awards (5 kill streak).">Impr</th>
+        <th data-sort="awards_accuracy"   class="num sortable help-label" title="Accuracy awards (3 consecutive headshots).">Acc</th>
+        <th data-sort="awards_excellent"  class="num sortable help-label" title="Excellent awards (12 kill streak).">Excl</th>
+        <th data-sort="best_kill_streak"  class="num sortable help-label" title="Best kill streak in this match.">Streak</th>
+      </tr>
+    </thead>
+    <tbody id="histBody">
+      <tr><td colspan="15" style="text-align:center;color:var(--muted);padding:1.2rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+<div style="display:flex;justify-content:center;align-items:center;gap:.45rem;flex-wrap:wrap;margin-top:.6rem;">
+  <button id="histPrevBtn" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:.3rem .8rem;border-radius:var(--radius);cursor:pointer;font-size:.82rem;">Prev</button>
+  <span id="histPageInfo" style="font-size:.82rem;color:var(--muted);min-width:5rem;text-align:center;">Page 1 / 1</span>
+  <button id="histNextBtn" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:.3rem .8rem;border-radius:var(--radius);cursor:pointer;font-size:.82rem;">Next</button>
+  <button id="histShowMoreBtn" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:.3rem 1rem;border-radius:var(--radius);cursor:pointer;font-size:.82rem;">Show More</button>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.stat-big   { font-size:1.5rem;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums; }
+.stat-label { font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:.2rem; }
+.list-card { padding:.85rem 1rem; }
+.list-title {
+  font-size:.72rem;
+  text-transform:uppercase;
+  letter-spacing:.07em;
+  color:var(--muted);
+  margin-bottom:.55rem;
+}
+.stat-list { border-top:1px solid var(--border); }
+.stat-row {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:.8rem;
+  padding:.52rem 0;
+  border-bottom:1px solid var(--border);
+  font-size:.84rem;
+}
+.stat-row span:first-child { color:var(--muted); }
+.stat-row .help-label[title] {
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.stat-row span:last-child {
+  color:var(--text);
+  font-weight:600;
+  font-variant-numeric:tabular-nums;
+}
+.loc-row    { display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem;font-size:.83rem; }
+.loc-name   { width:4.5rem;color:var(--muted);flex-shrink:0; }
+.loc-cnt    { width:3rem;text-align:right;font-variant-numeric:tabular-nums;flex-shrink:0; }
+.loc-pct    { width:3.5rem;text-align:right;color:var(--muted);font-size:.75rem;flex-shrink:0; }
+.rival-row  { display:flex;justify-content:space-between;padding:.2rem 0;border-bottom:1px solid var(--border); }
+.rival-row:last-child { border-bottom:none; }
+th.sortable { cursor:pointer;user-select:none; }
+th.sortable:hover { color:var(--text); }
+th.sort-asc::after  { content:' ▲';font-size:.65em;opacity:.7; }
+th.sort-desc::after { content:' ▼';font-size:.65em;opacity:.7; }
+.form-dot   { width:10px;height:10px;border-radius:50%;flex-shrink:0; }
+.badge-pill { display:inline-flex;align-items:center;gap:.25rem;padding:.2rem .55rem;
+              border-radius:1rem;font-size:.73rem;font-weight:600;background:rgba(255,255,255,.07);
+              border:1px solid rgba(255,255,255,.12); }
+.act-bar    { flex:0 0 auto;border-radius:2px 2px 0 0;background:var(--accent);opacity:.7;
+              transition:opacity .15s;cursor:pointer;min-width:6px; }
+.act-bar:hover { opacity:1; }
+.act-bar-active { opacity:1;border:1px solid rgba(255,255,255,.65);box-shadow:0 0 0 1px rgba(0,0,0,.25) inset; }
+@media (max-width: 640px) {
+  div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns:1fr !important; }
+  #careerGrid { grid-template-columns:repeat(2,minmax(120px,1fr)) !important; }
+}
+</style>
+
+<script>
+(function () {
+  'use strict';
+
+  const PLAYER = {{ player_name | tojson }};
+  const _periodAliases = {
+    alltime: 'all',
+    all_time: 'all',
+    thisweek: 'this_week',
+    lastweek: 'last_week',
+    thismonth: 'this_month',
+    lastmonth: 'last_month',
+    thisyear: 'this_year',
+    lastyear: 'last_year',
+    previous_year: 'last_year',
+  };
+  const _periodAllowed = new Set([
+    'this_week', 'last_week', 'this_month', 'last_month', 'this_year', 'last_year', 'all'
+  ]);
+  const _urlParams = new URLSearchParams(window.location.search);
+  const _periodRaw = String(_urlParams.get('period') || 'this_year').toLowerCase();
+  const _periodFromUrl = _periodAliases[_periodRaw] || _periodRaw;
+  const _currentPeriod = _periodAllowed.has(_periodFromUrl) ? _periodFromUrl : 'this_year';
+
+  function normalizeWeek(rawWeek) {
+    const raw = String(rawWeek || '').trim();
+    const m = raw.match(/^(\d{4})[-_]?w?(\d{1,2})$/i);
+    if (!m) return '';
+    const weekNum = parseInt(m[2], 10);
+    if (!Number.isFinite(weekNum) || weekNum < 0 || weekNum > 53) return '';
+    return `${m[1]}-${String(weekNum).padStart(2, '0')}`;
+  }
+
+  const _currentWeek = normalizeWeek(_urlParams.get('week'));
+  const _periodSelect = document.getElementById('periodFilter');
+
+  function reloadWithWeekFilter(weekValue) {
+    const params = new URLSearchParams(window.location.search);
+    const normalized = normalizeWeek(weekValue);
+    if (normalized) params.set('week', normalized);
+    else params.delete('week');
+    const qs = params.toString();
+    window.location.search = qs ? ('?' + qs) : '';
+  }
+
+  if (_periodSelect) {
+    _periodSelect.value = _currentPeriod;
+    _periodSelect.addEventListener('change', function () {
+      const selected = String(this.value || 'this_year').toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      if (selected === 'this_year') params.delete('period');
+      else params.set('period', selected);
+      params.delete('week');
+      const qs = params.toString();
+      window.location.search = qs ? ('?' + qs) : '';
+    });
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function fmt(n, dec) {
+    if (n == null || n === '') return '—';
+    const v = parseFloat(n);
+    if (isNaN(v)) return '—';
+    return dec != null ? v.toFixed(dec) : v.toLocaleString();
+  }
+  function fmtDate(unix) {
+    if (!unix) return '—';
+    return new Date(unix * 1000).toLocaleDateString(undefined,
+      { year:'numeric', month:'short', day:'numeric' });
+  }
+  function pct(v, dec) {
+    if (v == null || v === '') return '—';
+    const n = parseFloat(v);
+    if (isNaN(n)) return '—';
+    return n.toFixed(dec != null ? dec : 1) + '%';
+  }
+  function setEl(id, val) { const e = document.getElementById(id); if (e) e.textContent = val; }
+  function playerLink(name) {
+    return `<a href="/player/${encodeURIComponent(name)}" style="color:var(--accent);">${escHtml(name)}</a>`;
+  }
+
+  const base = '/api/player/' + encodeURIComponent(PLAYER);
+  function periodFetch(path) {
+    const sep = path.includes('?') ? '&' : '?';
+    let url = path + sep + 'period=' + encodeURIComponent(_currentPeriod);
+    if (_currentWeek) {
+      url += '&week=' + encodeURIComponent(_currentWeek);
+    }
+    return fetch(url);
+  }
+
+  // ── Win/Loss helpers ────────────────────────────────────────────────────────
+  function matchWon(r) {
+    // returns 1=win, 0=draw, -1=loss, null=unknown
+    if (!r.team || !(r.t1_rounds + r.t2_rounds)) return null;
+    if (r.t1_rounds === r.t2_rounds) return 0;
+    if ((r.team === 1 && r.t1_rounds > r.t2_rounds) ||
+        (r.team === 2 && r.t2_rounds > r.t1_rounds)) return 1;
+    return -1;
+  }
+
+  // ── Summary ────────────────────────────────────────────────────────────────
+  periodFetch(base + '/summary').then(r=>r.json()).then(d => {
+    if (!d || !d.games) return;
+    setEl('p-games',   fmt(d.games));
+    setEl('p-kills',   fmt(d.kills));
+    setEl('p-deaths',  fmt(d.deaths));
+    setEl('p-kd',      d.kd != null ? parseFloat(d.kd).toFixed(2) : '—');
+    setEl('p-damage',  fmt(d.damage));
+    setEl('p-acc',     d.avg_acc != null ? parseFloat(d.avg_acc).toFixed(1)+'%' : '—');
+    setEl('p-hs',      fmt(d.hs_kills));
+    setEl('p-best',    fmt(d.best_game));
+    setEl('p-avgdmg',  d.avg_damage != null ? fmt(Math.round(d.avg_damage)) : '—');
+    setEl('p-fpm',     d.frags_per_min != null ? parseFloat(d.frags_per_min).toFixed(2) : '—');
+    setEl('p-maps',    fmt(d.unique_maps));
+    if (d.total_playtime) {
+      const totalMin = Math.round(d.total_playtime / 60);
+      const h = Math.floor(totalMin / 60), m = totalMin % 60;
+      setEl('p-playtime', h > 0 ? `${h}h ${m}m` : `${m}m`);
+    }
+    setEl('p-impressive',     fmt(d.awards_impressive));
+    setEl('p-accuracy-award', fmt(d.awards_accuracy));
+    setEl('p-excellent',      fmt(d.awards_excellent));
+    setEl('p-streak',         fmt(d.best_kill_streak));
+
+    // Wins / Win% — denominator is only games with team+round data (tracked_games)
+    const wins  = d.wins  || 0;
+    const draws = d.draws || 0;
+    const tracked = d.tracked_games || 0;
+    const losses = Math.max(0, tracked - wins - draws);
+    setEl('p-wins', wins);
+    setEl('p-draws', draws);
+    setEl('p-losses', losses);
+    if (tracked > 0) {
+      const pctEl = document.getElementById('p-winpct');
+      if (pctEl) {
+        pctEl.textContent = (wins / tracked * 100).toFixed(1) + '%';
+        pctEl.title = `${wins}W / ${draws}D / ${losses}L (${tracked} tracked games)`;
+      }
+    }
+
+    // K/D colour
+    const kdEl = document.getElementById('p-kd');
+    if (kdEl && d.kd != null) {
+      kdEl.style.color = parseFloat(d.kd) >= 1 ? 'var(--green)' : 'var(--accent2)';
+    }
+
+    // Dates
+    if (d.first_seen || d.last_seen) {
+      document.getElementById('playerDates').textContent =
+        `Active: ${fmtDate(d.first_seen)} – ${fmtDate(d.last_seen)}`;
+    }
+
+    // Hit location bars
+    const locEl = document.getElementById('hitLocBars');
+    if (locEl) {
+      const locs = [
+        { name: 'Head',    cnt: d.h_head    || 0 },
+        { name: 'Stomach', cnt: d.h_stomach || 0 },
+        { name: 'Chest',   cnt: d.h_chest   || 0 },
+        { name: 'Legs',    cnt: d.h_legs    || 0 },
+      ];
+      const total = locs.reduce((s, l) => s + l.cnt, 0);
+      const maxCnt = Math.max(...locs.map(l => l.cnt), 1);
+      locEl.innerHTML = locs.map(l => {
+        const pct = total ? (l.cnt / total * 100).toFixed(1) : 0;
+        const barW = Math.round(l.cnt / maxCnt * 100);
+        return `<div class="loc-row">
+          <span class="loc-name">${l.name}</span>
+          <div class="bar-outer" style="flex:1"><div class="bar-inner" style="width:${barW}%"></div></div>
+          <span class="loc-cnt">${l.cnt.toLocaleString()}</span>
+          <span class="loc-pct">${pct}%</span>
+        </div>`;
+      }).join('');
+    }
+
+    // Achievement badges
+    renderBadges(d);
+  }).catch(()=>{});
+
+  // ── Round impact metrics ──────────────────────────────────────────────────
+  periodFetch(base + '/round-metrics').then(r=>r.json()).then(d => {
+    if (!d || !d.rounds) return;
+    setEl('pr-matches', fmt(d.matches));
+    setEl('pr-rounds', fmt(d.rounds));
+    setEl('pr-kpr', fmt(d.kills_per_round, 2));
+    setEl('pr-apr', fmt(d.assists_per_round, 2));
+    setEl('pr-dpr', fmt(d.avg_damage_per_round, 2));
+    setEl('pr-impact', fmt(d.impact_score, 2));
+
+    setEl('pr-winrate', pct(d.round_win_rate, 1));
+    setEl('pr-survival', pct(d.survival_rate, 1));
+    setEl('pr-fkrate', pct(d.first_kill_rate, 1));
+    setEl('pr-fdrate', pct(d.first_death_rate, 1));
+    setEl('pr-fkconv', pct(d.first_kill_conversion_rate, 1));
+    setEl('pr-assists-split', `${fmt(d.assists_verified)} / ${fmt(d.assists_estimated)}`);
+    setEl('pr-clutchrate', pct(d.clutch_rate, 1));
+  }).catch(()=>{});
+
+  // ── Multi-kill stats ──────────────────────────────────────────────────────
+  periodFetch(base + '/multikill-stats').then(r=>r.json()).then(d => {
+    if (!d || !d.total_rounds) return;
+    setEl('mk-rounds', fmt(d.total_rounds));
+    setEl('mk-2k', fmt(d.double_kills));
+    setEl('mk-3k', fmt(d.triple_kills));
+    setEl('mk-4k', fmt(d.quad_plus_kills));
+    setEl('mk-2k-rate', pct(d.double_kill_rate, 1));
+    setEl('mk-3k-rate', pct(d.triple_kill_rate, 1));
+    setEl('mk-4k-rate', pct(d.quad_plus_kill_rate, 1));
+  }).catch(()=>{});
+
+  // ── Competitive profile: playstyle ───────────────────────────────────────
+  const PROFILE_DESCRIPTIONS = {
+    aggressive_roamer: {
+      label: 'Aggressive Roamer',
+      short: 'Hunts across the map — high kill pace and heavy movement.',
+      rule: 'Aggression ≥ 65 and in-round movement ≥ 120 units/round.'
+    },
+    aggressive_anchor: {
+      label: 'Aggressive Anchor',
+      short: 'Fragger who holds position — high kills with less rotation.',
+      rule: 'Aggression ≥ 58 but below the roamer movement threshold.'
+    },
+    passive_survivor: {
+      label: 'Passive Survivor',
+      short: 'Usually alive at round end — trades fragging for presence.',
+      rule: 'Survival rate ≥ 70% and aggression ≤ 45.'
+    },
+    support_rotator: {
+      label: 'Support Rotator',
+      short: 'Covers ground without racking kills — rotations, flanks, info.',
+      rule: 'In-round movement ≥ 140 units/round and kills/round < 0.8.'
+    },
+    balanced: {
+      label: 'Balanced',
+      short: 'No single signal dominates — mixed play across roles.',
+      rule: 'Fallback when no other threshold is met.'
+    },
+  };
+
+  periodFetch(base + '/playstyle').then(r=>r.json()).then(d => {
+    const p = d && d.profile ? d.profile : null;
+    if (!p) {
+      setEl('cp-profile', 'No profile yet');
+      return;
+    }
+    const key = String(p.profile || 'balanced');
+    const desc = PROFILE_DESCRIPTIONS[key] || PROFILE_DESCRIPTIONS.balanced;
+    const profileEl = document.getElementById('cp-profile');
+    if (profileEl) {
+      profileEl.textContent = desc.label;
+      profileEl.title = desc.short + ' (' + desc.rule + ')';
+      profileEl.style.cursor = 'help';
+    }
+    setEl('cp-confidence', pct(p.profile_confidence, 1));
+    setEl('cp-aggression', fmt(p.aggression_index, 1));
+    setEl('cp-distance', fmt(p.distance_per_round, 1));
+    setEl('cp-distance-per-kill', p.distance_per_kill == null ? '—' : fmt(p.distance_per_kill, 1));
+    setEl('cp-consistency', fmt(p.consistency_score, 1));
+    setEl('cp-variance', fmt(p.skill_variance, 2));
+  }).catch(()=>{});
+
+  // Profile legend popup
+  const profileInfoBtn = document.getElementById('cp-profile-info');
+  if (profileInfoBtn) {
+    profileInfoBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      let overlay = document.getElementById('profile-legend-overlay');
+      if (overlay) { overlay.remove(); return; }
+      overlay = document.createElement('div');
+      overlay.id = 'profile-legend-overlay';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:1500;padding:1rem;';
+      const rows = Object.keys(PROFILE_DESCRIPTIONS).map(function (k) {
+        const d = PROFILE_DESCRIPTIONS[k];
+        return '<div style="padding:.6rem .2rem;border-bottom:1px solid var(--border);">' +
+          '<div style="font-weight:600;font-size:.9rem;margin-bottom:.15rem;">' + d.label + '</div>' +
+          '<div style="font-size:.8rem;color:var(--text);margin-bottom:.15rem;">' + d.short + '</div>' +
+          '<div style="font-size:.72rem;color:var(--muted);font-family:monospace;">' + d.rule + '</div>' +
+        '</div>';
+      }).join('');
+      overlay.innerHTML = '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);max-width:520px;width:100%;max-height:90vh;overflow-y:auto;padding:1rem 1.2rem;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem;">' +
+          '<strong style="font-size:1rem;">Playstyle Profiles</strong>' +
+          '<button type="button" aria-label="Close" style="background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:999px;width:1.6rem;height:1.6rem;cursor:pointer;padding:0;line-height:1;">×</button>' +
+        '</div>' +
+        '<div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;">Profiles are computed from your round-level behavior: kills, first-kill rate, movement distance, and survival rate. The classifier picks the first rule that matches.</div>' +
+        rows +
+      '</div>';
+      document.body.appendChild(overlay);
+      const close = function () { const o = document.getElementById('profile-legend-overlay'); if (o) o.remove(); };
+      overlay.querySelector('button').addEventListener('click', close);
+      overlay.addEventListener('click', function (ev) { if (ev.target === overlay) close(); });
+      document.addEventListener('keydown', function onEsc(ev) {
+        if (ev.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); }
+      });
+    });
+  }
+
+  // ── Competitive profile: rating history ──────────────────────────────────
+  periodFetch(base + '/rating-history?limit=80').then(r=>r.json()).then(d => {
+    const current = d.current || null;
+    if (current) {
+      setEl('cp-rating', fmt(current.rating, 1));
+      setEl('cp-rd', fmt(current.uncertainty, 1));
+      setEl('cp-rank', current.rank != null ? ('#' + fmt(current.rank)) : '—');
+      setEl('cp-trend', fmt(current.trend, 2));
+      setEl('cp-highskill', fmt(current.high_skill_matches));
+    }
+
+    const hist = d.history || [];
+    const chart = document.getElementById('cpRatingChart');
+    const legend = document.getElementById('cpRatingLegend');
+    if (!chart || !legend) return;
+    if (!hist.length) {
+      chart.innerHTML = '<span style="color:var(--muted);font-size:.76rem;">No rating history in selected filter.</span>';
+      legend.textContent = 'No rating history points available.';
+      return;
+    }
+
+    const minR = Math.min(...hist.map(h => h.rating));
+    const maxR = Math.max(...hist.map(h => h.rating));
+    const span = Math.max(1, maxR - minR);
+    chart.innerHTML = hist.slice(-50).map(h => {
+      const barH = Math.max(4, Math.round(((h.rating - minR) / span) * 64));
+      const col = parseFloat(h.delta || 0) >= 0 ? 'var(--green)' : 'var(--accent2)';
+      return `<div title="${fmtDate(h.played_at)}: ${fmt(h.rating, 1)} (Δ ${fmt(h.delta, 1)})"
+        style="flex:0 0 auto;min-width:6px;width:6px;height:${barH}px;border-radius:2px 2px 0 0;background:${col};opacity:.86;"></div>`;
+    }).join('');
+
+    const last = hist[hist.length - 1];
+    legend.textContent = `Current ${fmt(last.rating, 1)} ± ${fmt(last.uncertainty, 1)} across ${hist.length} tracked matches`;
+  }).catch(()=>{});
+
+  // ── Achievement badges ──────────────────────────────────────────────────────
+  function renderBadges(d) {
+    const el = document.getElementById('achievementBadges');
+    if (!el) return;
+    const g = d.games || 0;
+    const kd = parseFloat(d.kd || 0);
+    const acc = parseFloat(d.avg_acc || 0);
+    const kills = d.kills || 0;
+    const streak = d.best_kill_streak || 0;
+    const wins = d.wins || 0;
+    const badges = [];
+    if (g   >= 200) badges.push({ icon:'🏆', label:'Veteran',      tip:'200+ games played',      col:'#e8b64d' });
+    else if (g >= 100) badges.push({ icon:'🎖', label:'Regular',   tip:'100+ games played',      col:'#a0a8c3' });
+    if (kills >= 5000) badges.push({ icon:'💀', label:'Terminator', tip:'5000+ total kills',      col:'#e85d5d' });
+    else if (kills >= 1000) badges.push({ icon:'⚔', label:'Killer', tip:'1000+ total kills',     col:'#e85d5d' });
+    if (kd  >= 2.0) badges.push({ icon:'👑', label:'Dominant',      tip:'Career K/D ≥ 2.0',      col:'#f5c020' });
+    else if (kd >= 1.5) badges.push({ icon:'💪', label:'Skilled',   tip:'Career K/D ≥ 1.5',      col:'#4ecb71' });
+    if (acc >= 35)  badges.push({ icon:'🎯', label:'Sharpshooter',  tip:'Avg accuracy ≥ 35%',     col:'#5b8dee' });
+    if (streak >= 12) badges.push({ icon:'💎', label:'Excellent',   tip:'Kill streak ≥ 12',       col:'#a78bfa' });
+    else if (streak >= 5) badges.push({ icon:'🔥', label:'Streak Master', tip:'Kill streak ≥ 5', col:'#e8b64d' });
+    if ((d.awards_impressive||0) >= 50) badges.push({ icon:'⚡', label:'Impressionist', tip:'50+ Impressive awards', col:'#f0abfc' });
+    if ((d.awards_excellent||0)  >= 10) badges.push({ icon:'✨', label:'Excellence',   tip:'10+ Excellent awards',  col:'#67e8f9' });
+    const winRate = (wins / Math.max(g, 1)) * 100;
+    if (g >= 20 && winRate >= 60) badges.push({ icon:'🥇', label:'Winner',   tip:'Win rate ≥ 60%', col:'#f5c020' });
+    el.innerHTML = badges.map(b =>
+      `<span class="badge-pill" style="color:${b.col};border-color:${b.col}33;" title="${b.tip}">${b.icon} ${b.label}</span>`
+    ).join('');
+  }
+
+  // ── Rivals ─────────────────────────────────────────────────────────────────
+  periodFetch(base + '/rivals').then(r=>r.json()).then(d => {
+    function renderList(id, list, mode) {
+      // mode: 'nemesis' = they kill you, 'prey' = you kill them
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (!list || !list.length) { el.innerHTML = '<span style="color:var(--muted)">None</span>'; return; }
+      el.innerHTML = list.map(r => {
+        let mutual;
+        if (mode === 'nemesis' && r.my_kills != null) {
+          // r.count = they killed me, r.my_kills = I killed them back
+          mutual = `<span style="color:var(--muted);font-size:.78rem;margin-left:.3rem"
+               title="They killed you ${r.count}× / You killed them ${r.my_kills}×">${r.count}↓ ${r.my_kills}↑</span>`;
+        } else if (mode === 'prey' && r.their_kills != null) {
+          // r.count = I killed them, r.their_kills = they killed me back
+          mutual = `<span style="color:var(--muted);font-size:.78rem;margin-left:.3rem"
+               title="You killed them ${r.count}× / They killed you ${r.their_kills}×">${r.count}↑ ${r.their_kills}↓</span>`;
+        } else {
+          mutual = `<span style="color:var(--muted);font-variant-numeric:tabular-nums;">${r.count}×</span>`;
+        }
+        const h2hUrl = `/h2h?p1=${encodeURIComponent(PLAYER)}&p2=${encodeURIComponent(r.player)}&period=${encodeURIComponent(_currentPeriod)}`;
+        return `<div class="rival-row">
+          <span>${playerLink(r.player)}</span>
+          <span style="display:flex;align-items:center;gap:.4rem;">${mutual}
+            <a href="${h2hUrl}" style="color:var(--muted);font-size:.72rem;" title="Head-to-head">H2H</a>
+          </span>
+        </div>`;
+      }).join('');
+    }
+    renderList('nemesisList', d.nemesis, 'nemesis');
+    renderList('preyList',    d.prey,    'prey');
+  }).catch(()=>{});
+
+  // ── Activity chart ──────────────────────────────────────────────────────────
+  periodFetch(base + '/activity').then(r=>r.json()).then(data => {
+    const chart  = document.getElementById('playerActivityChart');
+    const legend = document.getElementById('playerActivityLegend');
+    const weekFilter = document.getElementById('playerActivityWeekFilter');
+    const weekFilterText = document.getElementById('playerActivityWeekFilterText');
+    const weekFilterClear = document.getElementById('playerActivityWeekFilterClear');
+    if (!data || !data.length) {
+      if (chart) chart.textContent = 'No activity data.';
+      if (_currentWeek && weekFilter && weekFilterText) {
+        weekFilter.style.display = 'flex';
+        weekFilterText.textContent = `Filtered to week ${_currentWeek}`;
+        if (weekFilterClear) {
+          weekFilterClear.addEventListener('click', function () {
+            reloadWithWeekFilter('');
+          });
+        }
+      }
+      return;
+    }
+    const maxM = Math.max(...data.map(d => d.matches), 1);
+    chart.innerHTML = data.map(d => {
+      const h = Math.max(4, Math.round(d.matches / maxM * 56));
+      const selectedClass = d.week === _currentWeek ? ' act-bar-active' : '';
+      return `<div class="act-bar${selectedClass}" data-week="${escHtml(d.week)}" style="height:${h}px;flex:1 0 auto;max-width:24px;"
+        title="${escHtml(d.week)}: ${d.matches} game${d.matches!==1?'s':''}"></div>`;
+    }).join('');
+    const total = data.reduce((s, d) => s + d.matches, 0);
+    legend.textContent = `${data[0].week} → ${data[data.length-1].week}  ·  ${total} games total`;
+
+    chart.addEventListener('click', function (event) {
+      const bar = event.target && event.target.closest('.act-bar[data-week]');
+      if (!bar) return;
+      const week = String(bar.getAttribute('data-week') || '');
+      reloadWithWeekFilter(week === _currentWeek ? '' : week);
+    });
+
+    if (_currentWeek && weekFilter && weekFilterText) {
+      weekFilter.style.display = 'flex';
+      weekFilterText.textContent = `Filtered to week ${_currentWeek}`;
+      if (weekFilterClear) {
+        weekFilterClear.addEventListener('click', function () {
+          reloadWithWeekFilter('');
+        });
+      }
+    }
+  }).catch(()=>{});
+
+  // ── Sort helper ─────────────────────────────────────────────────────────────
+  function applySort(tableId, col, sort) {
+    document.querySelectorAll('#' + tableId + ' th[data-sort]').forEach(h => {
+      h.classList.remove('sort-asc', 'sort-desc');
+      if (h.dataset.sort === col) h.classList.add(sort.dir === 1 ? 'sort-asc' : 'sort-desc');
+    });
+  }
+  function sortData(data, sort) {
+    const { col, dir } = sort;
+    return data.slice().sort((a, b) => {
+      let av = a[col], bv = b[col];
+      if (av == null) av = dir === 1 ? Infinity : -Infinity;
+      if (bv == null) bv = dir === 1 ? Infinity : -Infinity;
+      return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
+    });
+  }
+  function bindSort(tableId, sortState, renderFn) {
+    document.getElementById(tableId).querySelector('thead').addEventListener('click', e => {
+      const th = e.target.closest('th[data-sort]');
+      if (!th) return;
+      const col = th.dataset.sort;
+      if (sortState.col === col) {
+        sortState.dir *= -1;
+      } else {
+        sortState.col = col;
+        sortState.dir = (col === 'weapon' || col === 'map' || col === 'played_at') ? 1 : -1;
+      }
+      renderFn();
+    });
+  }
+
+  // ── Weapon stats ───────────────────────────────────────────────────────────
+  let _weaponData = [];
+  const _weaponSort = { col: 'kills', dir: -1 };
+
+  function renderWeapons() {
+    const tbody = document.getElementById('weaponBody');
+    if (!_weaponData.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1rem;">No data.</td></tr>';
+      return;
+    }
+    // Attach computed hs_pct for sorting
+    _weaponData.forEach(r => { r.hs_pct = r.kills ? r.hs / r.kills * 100 : null; });
+    const sorted = sortData(_weaponData, _weaponSort);
+    const maxK = Math.max(..._weaponData.map(d => d.kills), 1);
+    tbody.innerHTML = sorted.map(r => {
+      const hsPct = r.kills ? (r.hs / r.kills * 100).toFixed(1)+'%' : '—';
+      return `<tr>
+        <td><a href="/weapon/${encodeURIComponent(r.weapon)}" style="font-weight:600;color:var(--text);">${escHtml(r.weapon)}</a></td>
+        <td class="num">${fmt(r.kills)}</td>
+        <td class="num">${fmt(r.hs)}</td>
+        <td class="num">${hsPct}</td>
+        <td><div class="bar-outer"><div class="bar-inner" style="width:${Math.round(r.kills/maxK*100)}%"></div></div></td>
+      </tr>`;
+    }).join('');
+    applySort('weaponTable', _weaponSort.col, _weaponSort);
+  }
+
+  periodFetch(base + '/weapons').then(r=>r.json()).then(data => {
+    _weaponData = data;
+    renderWeapons();
+    bindSort('weaponTable', _weaponSort, renderWeapons);
+  }).catch(()=>{});
+
+  // ── Map breakdown ──────────────────────────────────────────────────────────
+  let _mapData = [];
+  const _mapSort = { col: 'games', dir: -1 };
+  let _mapPage = 1;
+  let _mapPageSize = 10;
+
+  function renderMaps() {
+    const tbody = document.getElementById('mapBody');
+    const pageInfo = document.getElementById('mapPageInfo');
+    const prevBtn = document.getElementById('mapPrevBtn');
+    const nextBtn = document.getElementById('mapNextBtn');
+    const showMoreBtn = document.getElementById('mapShowMoreBtn');
+    if (!_mapData.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:1rem;">No data.</td></tr>';
+      if (pageInfo) pageInfo.textContent = 'Page 0 / 0';
+      if (prevBtn) prevBtn.disabled = true;
+      if (nextBtn) nextBtn.disabled = true;
+      if (showMoreBtn) showMoreBtn.disabled = true;
+      return;
+    }
+
+    const sorted = sortData(_mapData, _mapSort);
+    const totalPages = Math.max(1, Math.ceil(sorted.length / _mapPageSize));
+    if (_mapPage > totalPages) _mapPage = totalPages;
+    const start = (_mapPage - 1) * _mapPageSize;
+    const pageRows = sorted.slice(start, start + _mapPageSize);
+
+    tbody.innerHTML = pageRows.map(r => {
+      const kd = parseFloat(r.kd || 0).toFixed(2);
+      return `<tr>
+        <td style="white-space:nowrap;"><img src="https://raw.githubusercontent.com/vrolse/AQ2-pickup-bot/main/thumbnails/${encodeURIComponent(r.map.toLowerCase())}.jpg" loading="lazy" width="64" height="40" data-map-thumb-modal="1" alt="Map thumbnail" style="border-radius:3px;object-fit:cover;vertical-align:middle;margin-right:.5rem;cursor:zoom-in;" onerror="this.style.display='none'"><a href="/map/${encodeURIComponent(r.map)}" style="font-weight:600;color:var(--text);">${escHtml(r.map)}</a></td>
+        <td class="num">${r.games}</td>
+        <td class="num">${fmt(r.kills)}</td>
+        <td class="num">${fmt(r.deaths)}</td>
+        <td class="num" style="color:${parseFloat(kd)>=1?'var(--green)':'var(--accent2)'}">${kd}</td>
+        <td class="num">${r.avg_kills != null ? parseFloat(r.avg_kills).toFixed(1) : '—'}</td>
+        <td class="num">${fmt(r.damage)}</td>
+        <td class="num">${r.avg_damage != null ? fmt(Math.round(r.avg_damage)) : '—'}</td>
+      </tr>`;
+    }).join('');
+
+    if (pageInfo) pageInfo.textContent = `Page ${_mapPage} / ${totalPages}`;
+    if (prevBtn) prevBtn.disabled = _mapPage <= 1;
+    if (nextBtn) nextBtn.disabled = _mapPage >= totalPages;
+    if (showMoreBtn) {
+      showMoreBtn.disabled = _mapPageSize >= sorted.length;
+      showMoreBtn.textContent = `Show More (${_mapPageSize})`;
+    }
+
+    applySort('mapTable', _mapSort.col, _mapSort);
+  }
+
+  document.getElementById('mapPrevBtn').addEventListener('click', () => {
+    if (_mapPage > 1) {
+      _mapPage -= 1;
+      renderMaps();
+    }
+  });
+
+  document.getElementById('mapNextBtn').addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil(_mapData.length / _mapPageSize));
+    if (_mapPage < totalPages) {
+      _mapPage += 1;
+      renderMaps();
+    }
+  });
+
+  document.getElementById('mapShowMoreBtn').addEventListener('click', () => {
+    if (!_mapData.length) return;
+    const firstVisible = (_mapPage - 1) * _mapPageSize;
+    _mapPageSize = Math.min(_mapPageSize + 10, _mapData.length);
+    _mapPage = Math.floor(firstVisible / _mapPageSize) + 1;
+    renderMaps();
+  });
+
+  periodFetch(base + '/maps').then(r=>r.json()).then(data => {
+    _mapData = data;
+    _mapPage = 1;
+    renderMaps();
+    bindSort('mapTable', _mapSort, () => {
+      _mapPage = 1;
+      renderMaps();
+    });
+  }).catch(()=>{});
+
+  // ── Match history ──────────────────────────────────────────────────────────
+  let _histData = [];
+  let _histOffset = 0;
+  let _histHasMore = true;
+  let _histLoading = false;
+  let _histPage = 1;
+  let _histPageSize = 10;
+  const _HIST_LIMIT = 10;
+  const _histSort = { col: 'played_at', dir: -1 };
+
+  function wlBadge(r) {
+    const w = matchWon(r);
+    if (w === 1)  return '<span style="color:var(--green);font-weight:700;font-size:.78rem;">W</span>';
+    if (w === 0)  return '<span style="color:var(--muted);font-weight:700;font-size:.78rem;">D</span>';
+    if (w === -1) return '<span style="color:var(--accent2);font-weight:700;font-size:.78rem;">L</span>';
+    return '<span style="color:var(--muted);font-size:.78rem;">—</span>';
+  }
+
+  function renderHist() {
+    const tbody = document.getElementById('histBody');
+    const pageInfo = document.getElementById('histPageInfo');
+    const prevBtn = document.getElementById('histPrevBtn');
+    const nextBtn = document.getElementById('histNextBtn');
+    const showMoreBtn = document.getElementById('histShowMoreBtn');
+    if (!_histData.length) {
+      tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;color:var(--muted);padding:1rem;">No matches.</td></tr>';
+      if (pageInfo) pageInfo.textContent = 'Page 0 / 0';
+      if (prevBtn) prevBtn.disabled = true;
+      if (nextBtn) nextBtn.disabled = true;
+      if (showMoreBtn) showMoreBtn.disabled = true;
+      return;
+    }
+    // Attach computed kd for sorting
+    _histData.forEach(r => { r.kd = r.deaths ? r.kills / r.deaths : (r.kills || 0); });
+    const sorted = sortData(_histData, _histSort);
+    const totalPagesLoaded = Math.max(1, Math.ceil(sorted.length / _histPageSize));
+    if (_histPage > totalPagesLoaded) _histPage = totalPagesLoaded;
+    const start = (_histPage - 1) * _histPageSize;
+    const pageRows = sorted.slice(start, start + _histPageSize);
+
+    tbody.innerHTML = pageRows.map(r => {
+      const kd = r.deaths ? (r.kills / r.deaths).toFixed(2) : (r.kills || 0).toFixed(2);
+      const score = (r.t1_rounds || r.t2_rounds)
+        ? `<span class="score-t1">${r.t1_rounds}</span><span class="score-sep">–</span><span class="score-t2">${r.t2_rounds}</span>`
+        : '—';
+      const modeBadge = r.game_mode === 'ctf'
+        ? ' <span style="font-size:.7rem;background:var(--accent2);color:#fff;border-radius:3px;padding:1px 4px;vertical-align:middle;">CTF</span>'
+        : r.game_mode === 'dm'
+        ? ' <span style="font-size:.7rem;background:#666;color:#fff;border-radius:3px;padding:1px 4px;vertical-align:middle;">DM</span>'
+        : '';
+      return `<tr>
+        <td>${fmtDate(r.played_at)}</td>
+        <td><a href="/replay/${encodeURIComponent(r.path)}"
+               style="font-weight:600;color:var(--text);">${escHtml(r.map)}</a>${modeBadge}</td>
+        <td class="num">${score}</td>
+        <td class="num">${wlBadge(r)}</td>
+        <td class="num">${fmt(r.kills)}</td>
+        <td class="num">${fmt(r.deaths)}</td>
+        <td class="num" style="color:${parseFloat(kd)>=1?'var(--green)':'var(--accent2)'}">${kd}</td>
+        <td class="num">${fmt(r.damage)}</td>
+        <td class="num">${r.accuracy != null ? parseFloat(r.accuracy).toFixed(1)+'%' : '—'}</td>
+        <td class="num">${fmt(r.hs_kills)}</td>
+        <td class="num">${r.duration ? Math.round(r.duration/60)+' min' : '—'}</td>
+        <td class="num">${r.awards_impressive || '—'}</td>
+        <td class="num">${r.awards_accuracy || '—'}</td>
+        <td class="num">${r.awards_excellent || '—'}</td>
+        <td class="num">${r.best_kill_streak || '—'}</td>
+      </tr>`;
+    }).join('');
+
+    if (pageInfo) pageInfo.textContent = `Page ${_histPage} / ${totalPagesLoaded}${_histHasMore ? '+' : ''}`;
+    if (prevBtn) prevBtn.disabled = _histPage <= 1;
+    if (nextBtn) nextBtn.disabled = !_histHasMore && _histPage >= totalPagesLoaded;
+    if (showMoreBtn) showMoreBtn.textContent = `Show More (${_histPageSize})`;
+
+    applySort('histTable', _histSort.col, _histSort);
+  }
+
+  function loadHist(offset, rerender = true) {
+    if (_histLoading) return Promise.resolve([]);
+    _histLoading = true;
+    return periodFetch(base + `/matches?limit=${_HIST_LIMIT}&offset=${offset}`)
+      .then(r => r.json())
+      .then(data => {
+        _histData = _histData.concat(data);
+        _histOffset = offset + data.length;
+        _histHasMore = data.length === _HIST_LIMIT;
+        // Show form dots from first batch (most recent matches)
+        if (offset === 0) renderFormDots(_histData);
+        if (rerender) renderHist();
+        return data;
+      })
+      .catch(() => [])
+      .finally(() => {
+        _histLoading = false;
+      });
+  }
+
+  function ensureHistRowsForPage(pageNum) {
+    const needed = pageNum * _histPageSize;
+    if (_histData.length >= needed || !_histHasMore) {
+      return Promise.resolve();
+    }
+    return loadHist(_histOffset, false).then(() => ensureHistRowsForPage(pageNum));
+  }
+
+  // Bind sort once — not inside loadHist to avoid duplicate handlers
+  bindSort('histTable', _histSort, () => {
+    _histPage = 1;
+    renderHist();
+  });
+
+  document.getElementById('histPrevBtn').addEventListener('click', () => {
+    if (_histPage > 1) {
+      _histPage -= 1;
+      renderHist();
+    }
+  });
+
+  document.getElementById('histNextBtn').addEventListener('click', () => {
+    const targetPage = _histPage + 1;
+    ensureHistRowsForPage(targetPage).then(() => {
+      const totalPagesLoaded = Math.max(1, Math.ceil(_histData.length / _histPageSize));
+      if (targetPage <= totalPagesLoaded) {
+        _histPage = targetPage;
+      }
+      renderHist();
+    });
+  });
+
+  document.getElementById('histShowMoreBtn').addEventListener('click', () => {
+    const firstVisible = (_histPage - 1) * _histPageSize;
+    _histPageSize += 10;
+    _histPage = Math.floor(firstVisible / _histPageSize) + 1;
+    ensureHistRowsForPage(_histPage).then(renderHist);
+  });
+
+  loadHist(0);
+
+  // ── Form dots ───────────────────────────────────────────────────────────────
+  function renderFormDots(matches) {
+    const el = document.getElementById('formDots');
+    if (!el) return;
+    // Take up to 10 most recent (they come newest-first from API)
+    const recent = matches.slice(0, 10);
+    el.innerHTML = recent.map(r => {
+      const w = matchWon(r);
+      const col = w === 1 ? 'var(--green)' : w === -1 ? 'var(--accent2)' : 'var(--muted)';
+      const tip = w === 1 ? 'Win' : w === -1 ? 'Loss' : w === 0 ? 'Draw' : 'Unknown';
+      return `<span class="form-dot" style="background:${col};" title="${escHtml(r.map)} – ${tip}"></span>`;
+    }).join('');
+  }
+
+})();
+</script>
+{% endblock %}

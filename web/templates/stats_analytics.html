@@ -1,0 +1,437 @@
+{% extends "base.html" %}
+{% block title %}Analytics — AQ2{% endblock %}
+
+{% block content %}
+{% set active_stats_page = 'analytics' %}
+{% include "_stats_nav.html" %}
+
+<!-- ── First-kill dashboard ─────────────────────────────────── -->
+<div class="section-title">First Kill Dashboard</div>
+
+<div class="analytics-two-col" style="margin-bottom:.7rem;">
+  <div class="card" style="padding:.9rem 1rem;">
+    <div class="mini-grid" id="fkSummaryGrid">
+      <div class="mini-stat"><span class="help-label" title="Total tracked rounds in the current filter.">Rounds</span><strong id="fkTotalRounds">—</strong></div>
+      <div class="mini-stat"><span class="help-label" title="Percent of rounds where a first kill happened.">FK Presence</span><strong id="fkPresence">—</strong></div>
+      <div class="mini-stat"><span class="help-label" title="When a first kill happens, percent of those rounds won by that same side.">FK Conversion</span><strong id="fkConv">—</strong></div>
+      <div class="mini-stat"><span class="help-label" title="Team 1 win rate in rounds where Team 1 got first kill.">T1 FK Win Rate</span><strong id="fkT1Conv">—</strong></div>
+      <div class="mini-stat"><span class="help-label" title="Team 2 win rate in rounds where Team 2 got first kill.">T2 FK Win Rate</span><strong id="fkT2Conv">—</strong></div>
+      <div class="mini-stat"><span class="help-label" title="Rounds where first-kill side converted to a win.">Converted Rounds</span><strong id="fkConverted">—</strong></div>
+    </div>
+  </div>
+  <div class="card" style="padding:.9rem 1rem;">
+    <div class="split-list-grid">
+      <div>
+        <div class="list-caption">Top FK Players</div>
+        <div id="fkTopPlayers" class="tiny-list muted-note">Loading…</div>
+      </div>
+      <div>
+        <div class="list-caption">Top FK Weapons</div>
+        <div id="fkTopWeapons" class="tiny-list muted-note">Loading…</div>
+      </div>
+      <div>
+        <div class="list-caption">Top FK Locations</div>
+        <div id="fkTopLocations" class="tiny-list muted-note">Loading…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="padding:0;overflow-x:auto;margin-bottom:2rem;">
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Map where the first-kill hotspot occurred.">Map</th>
+        <th class="help-label" title="Weapon used for the first kill.">Weapon</th>
+        <th class="help-label" title="Hit location of the first-kill shot.">Location</th>
+        <th class="num help-label" title="Count of first kills for this map/weapon/location combination.">First Kills</th>
+      </tr>
+    </thead>
+    <tbody id="fkHotspotsBody">
+      <tr><td colspan="4" class="center muted-row">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Team analytics ──────────────────────────────────────── -->
+<div class="section-title">Team Analytics</div>
+
+<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem;">
+  <div class="mini-grid">
+    <div class="mini-stat"><span class="help-label" title="Tracked rounds in selected filter.">Total Rounds</span><strong id="teamTotalRounds">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Share of rounds won by Team 1.">T1 Round Win %</span><strong id="teamT1WinRate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Share of rounds won by Team 2.">T2 Round Win %</span><strong id="teamT2WinRate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="T1 conversion after getting first kill.">T1 FK Win %</span><strong id="teamT1FkRate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="T2 conversion after getting first kill.">T2 FK Win %</span><strong id="teamT2FkRate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Rounds ending with no winner.">Tied Rounds</span><strong id="teamTies">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Matches where captains were detected.">Captain Matches</span><strong id="teamCaptainMatches">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Distinct captain names detected.">Distinct Captains</span><strong id="teamCaptainDistinct">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Average captain changes per captain-tracked match.">Captain Switches/Match</span><strong id="teamCaptainSwitches">—</strong></div>
+  </div>
+</div>
+
+<div class="card" style="padding:0;overflow-x:auto;margin-bottom:.7rem;">
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Side identifier.">Team</th>
+        <th class="num help-label" title="Total rounds played.">Rounds</th>
+        <th class="num help-label" title="Round win percentage.">Win %</th>
+        <th class="num help-label" title="Percent of rounds where at least one player survived.">Survival %</th>
+        <th class="num help-label" title="Win % when this team secures first kill.">FK Win %</th>
+        <th class="num help-label" title="Win rate when outnumbered.">Clutch %</th>
+        <th class="num help-label" title="Kills divided by deaths.">K/D</th>
+      </tr>
+    </thead>
+    <tbody id="teamAnalyticsBody">
+      <tr><td colspan="7" class="center muted-row">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="analytics-two-col" style="margin-bottom:.7rem;">
+  <div class="card" style="padding:0;overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th class="help-label" title="Map name.">Map</th>
+          <th class="help-label" title="Team side.">Team</th>
+          <th class="num help-label" title="Rounds played.">Rounds</th>
+          <th class="num help-label" title="Round win %.">Win %</th>
+          <th class="num help-label" title="FK win %.">FK Win %</th>
+          <th class="num help-label" title="Survival %.">Survival %</th>
+        </tr>
+      </thead>
+      <tbody id="teamMapBody">
+        <tr><td colspan="6" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card" style="padding:0;overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th class="help-label" title="Team side.">Team</th>
+          <th class="help-label" title="Captain name.">Captain</th>
+          <th class="num help-label" title="Matches as primary captain.">Matches</th>
+          <th class="num help-label" title="Match win %.">Match Win %</th>
+          <th class="num help-label" title="Round win %.">Round Win %</th>
+          <th class="num help-label" title="Captain changes.">Switches</th>
+        </tr>
+      </thead>
+      <tbody id="teamCaptainBody">
+        <tr><td colspan="6" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Round analytics ─────────────────────────────────────── -->
+<div class="section-title" style="margin-top:2rem;">Round Analytics</div>
+
+<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem;">
+  <div class="mini-grid">
+    <div class="mini-stat"><span class="help-label" title="Average round duration.">Avg Round</span><strong id="roundAvg">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Shortest recorded round.">Shortest</span><strong id="roundShortest">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Longest recorded round.">Longest</span><strong id="roundLongest">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Average kills per round.">Avg Kills/Round</span><strong id="roundKpr">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Percent of rounds with early first kills.">Early Kills %</span><strong id="roundEarly">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Percent of rounds with late first kills.">Late Kills %</span><strong id="roundLate">—</strong></div>
+  </div>
+</div>
+
+<div class="analytics-two-col" style="margin-bottom:2rem;">
+  <div class="card" style="padding:0;overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th class="help-label" title="How the round was won.">Win Condition</th>
+          <th class="num help-label" title="Rounds ending this way.">Rounds</th>
+          <th class="num help-label" title="Average duration for these rounds (seconds).">Avg Duration (s)</th>
+        </tr>
+      </thead>
+      <tbody id="roundWinCondBody">
+        <tr><td colspan="3" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card" style="padding:0;overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th class="help-label" title="Which side got the first kill.">First Kill Side</th>
+          <th class="num help-label" title="Rounds where this side got first kill.">Rounds</th>
+          <th class="num help-label" title="Percent of those rounds won by first-kill side.">Conversion %</th>
+        </tr>
+      </thead>
+      <tbody id="roundFkOutcomeBody">
+        <tr><td colspan="3" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Match analytics ─────────────────────────────────────── -->
+<div class="section-title">Match Analytics</div>
+
+<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem;">
+  <div class="mini-grid">
+    <div class="mini-stat"><span class="help-label" title="Average final round-score gap between teams.">Avg Round Diff</span><strong id="matchAvgDiff">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Matches decided by a small score gap.">Close Match Rate</span><strong id="matchCloseRate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Matches decided by large score gaps.">Dominant Match Rate</span><strong id="matchDomRate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Matches where a trailing side came back to win.">Comeback Rate</span><strong id="matchComebackRate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Volatility indicator based on lead-changes.">Momentum Index</span><strong id="matchMomentumIdx">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Total matches in this window.">Total Matches</span><strong id="matchTotal">—</strong></div>
+  </div>
+</div>
+
+<div class="analytics-two-col">
+  <div class="card" style="padding:0;overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th class="help-label" title="Final round-score gap between teams.">Round Diff</th>
+          <th class="num help-label" title="Matches with this score difference.">Matches</th>
+        </tr>
+      </thead>
+      <tbody id="matchScoreDistBody">
+        <tr><td colspan="2" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card" style="padding:0;overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th class="help-label" title="Match date.">Date</th>
+          <th class="help-label" title="Map played.">Map</th>
+          <th class="num help-label" title="Final round score.">Score</th>
+          <th class="num help-label" title="Longest kill streak in the match.">Max Streak</th>
+          <th class="num help-label" title="Momentum score; higher = more volatile.">Momentum</th>
+        </tr>
+      </thead>
+      <tbody id="matchMomentumBody">
+        <tr><td colspan="5" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  var S = window.AQ2Stats;
+  if (!S) return;
+
+  var filters = S.bindFilters();
+  S.initStatusBadge({ badgeId: 'statusBadge' });
+
+  function set(id, v) { var e = document.getElementById(id); if (e) e.textContent = v; }
+  function pct(v, d) {
+    if (v == null || v === '') return '—';
+    return parseFloat(v).toFixed(d != null ? d : 1) + '%';
+  }
+  function secs(v) {
+    if (v == null) return '—';
+    return parseFloat(v).toFixed(1) + 's';
+  }
+  function teamColor(team) {
+    return parseInt(team, 10) === 1 ? 'var(--t1)' : 'var(--t2)';
+  }
+  function tinyRow(label, value) {
+    return '<div class="tiny-row"><span>' + S.escHtml(String(label)) + '</span><strong>' + S.fmtNum(value) + '</strong></div>';
+  }
+
+  // ── First-kill dashboard ──────────────────────────────────
+  S.fetchJson('/api/stats/first-kill?limit=12', filters).then(function (d) {
+    var s = d.summary || {};
+    set('fkTotalRounds', S.fmtNum(s.total_rounds));
+    set('fkPresence',    pct(s.first_kill_presence_rate, 1));
+    set('fkConv',        pct(s.first_kill_conversion_rate, 1));
+    set('fkT1Conv',      pct(s.team1_first_kill_conversion_rate, 1));
+    set('fkT2Conv',      pct(s.team2_first_kill_conversion_rate, 1));
+    set('fkConverted',   S.fmtNum(s.first_kill_to_win_rounds));
+
+    function fillList(elId, rows, labelKey, valKey) {
+      var el = document.getElementById(elId);
+      if (!el) return;
+      if (!rows || !rows.length) { el.innerHTML = '<span class="muted-note">No data.</span>'; return; }
+      el.innerHTML = rows.map(function (r) {
+        return tinyRow(r[labelKey] != null ? r[labelKey] : 'unknown', r[valKey]);
+      }).join('');
+    }
+    fillList('fkTopPlayers',   d.top_players   || [], 'name',     'first_kills');
+    fillList('fkTopWeapons',   d.top_weapons   || [], 'weapon',   'first_kills');
+    fillList('fkTopLocations', d.top_locations || [], 'location', 'first_kills');
+
+    var hbody = document.getElementById('fkHotspotsBody');
+    var hotspots = d.map_hotspots || [];
+    if (!hotspots.length) {
+      hbody.innerHTML = '<tr><td colspan="4" class="center muted-row">No hotspot data yet.</td></tr>';
+    } else {
+      hbody.innerHTML = hotspots.map(function (r) {
+        return '<tr>' +
+          '<td><a href="/map/' + encodeURIComponent(r.map || '') + '">' + S.escHtml(r.map || 'unknown') + '</a></td>' +
+          '<td>' + S.escHtml(r.weapon || 'unknown') + '</td>' +
+          '<td>' + S.escHtml(r.location || 'unknown') + '</td>' +
+          '<td class="num">' + S.fmtNum(r.first_kills) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+  }).catch(function () {
+    ['fkTotalRounds','fkPresence','fkConv','fkT1Conv','fkT2Conv','fkConverted'].forEach(function (id) { set(id, '—'); });
+  });
+
+  // ── Team analytics ────────────────────────────────────────
+  S.fetchJson('/api/stats/team-analytics?limit=30', filters).then(function (d) {
+    var s = d.summary || {};
+    set('teamTotalRounds',     S.fmtNum(s.total_rounds));
+    set('teamT1WinRate',       pct(s.team1_round_win_rate, 1));
+    set('teamT2WinRate',       pct(s.team2_round_win_rate, 1));
+    set('teamT1FkRate',        pct(s.team1_first_kill_win_rate, 1));
+    set('teamT2FkRate',        pct(s.team2_first_kill_win_rate, 1));
+    set('teamTies',            S.fmtNum(s.tied_rounds));
+    set('teamCaptainMatches',  S.fmtNum(s.matches_with_captains));
+    set('teamCaptainDistinct', S.fmtNum(s.distinct_captains));
+    set('teamCaptainSwitches', s.captain_switches_per_match != null ? parseFloat(s.captain_switches_per_match).toFixed(2) : '—');
+
+    var teamBody = document.getElementById('teamAnalyticsBody');
+    var teams = d.teams || [];
+    if (!teams.length) {
+      teamBody.innerHTML = '<tr><td colspan="7" class="center muted-row">No team data yet.</td></tr>';
+    } else {
+      teamBody.innerHTML = teams.map(function (r) {
+        var c = teamColor(r.team);
+        return '<tr>' +
+          '<td><strong style="color:' + c + '">' + S.escHtml(r.team_label || ('Team ' + r.team)) + '</strong></td>' +
+          '<td class="num">' + S.fmtNum(r.rounds) + '</td>' +
+          '<td class="num">' + pct(r.round_win_rate, 1) + '</td>' +
+          '<td class="num">' + pct(r.survival_rate, 1) + '</td>' +
+          '<td class="num">' + pct(r.first_kill_win_rate, 1) + '</td>' +
+          '<td class="num">' + pct(r.clutch_rate, 1) + '</td>' +
+          '<td class="num">' + (r.kd != null ? parseFloat(r.kd).toFixed(2) : '—') + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    var mapBody = document.getElementById('teamMapBody');
+    var mapRows = d.map_breakdown || [];
+    if (!mapRows.length) {
+      mapBody.innerHTML = '<tr><td colspan="6" class="center muted-row">No map team data yet.</td></tr>';
+    } else {
+      mapBody.innerHTML = mapRows.map(function (r) {
+        var c = teamColor(r.team);
+        return '<tr>' +
+          '<td><a href="/map/' + encodeURIComponent(r.map || '') + '">' + S.escHtml(r.map || 'unknown') + '</a></td>' +
+          '<td style="color:' + c + '">' + S.escHtml(r.team_label || ('Team ' + r.team)) + '</td>' +
+          '<td class="num">' + S.fmtNum(r.rounds) + '</td>' +
+          '<td class="num">' + pct(r.round_win_rate, 1) + '</td>' +
+          '<td class="num">' + pct(r.first_kill_win_rate, 1) + '</td>' +
+          '<td class="num">' + pct(r.survival_rate, 1) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    var capBody = document.getElementById('teamCaptainBody');
+    var capRows = d.captains || [];
+    if (!capRows.length) {
+      capBody.innerHTML = '<tr><td colspan="6" class="center muted-row">No captain analytics yet.</td></tr>';
+    } else {
+      capBody.innerHTML = capRows.map(function (r) {
+        var c = teamColor(r.team);
+        return '<tr>' +
+          '<td style="color:' + c + '">' + S.escHtml(r.team_label || ('Team ' + r.team)) + '</td>' +
+          '<td><a href="/player/' + encodeURIComponent(r.captain_name || '') + '">' + S.escHtml(r.captain_name || 'unknown') + '</a></td>' +
+          '<td class="num">' + S.fmtNum(r.matches) + '</td>' +
+          '<td class="num">' + pct(r.match_win_rate, 1) + '</td>' +
+          '<td class="num">' + pct(r.round_win_rate, 1) + '</td>' +
+          '<td class="num">' + S.fmtNum(r.captain_switches) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+  }).catch(function () {});
+
+  // ── Round analytics ───────────────────────────────────────
+  S.fetchJson('/api/stats/round-analytics?limit=30', filters).then(function (d) {
+    var s = d.summary || {};
+    set('roundAvg',      secs(s.avg_round_seconds));
+    set('roundShortest', secs(s.shortest_round_seconds));
+    set('roundLongest',  secs(s.longest_round_seconds));
+    set('roundKpr',      s.avg_kills_per_round != null ? parseFloat(s.avg_kills_per_round).toFixed(2) : '—');
+    set('roundEarly',    pct(s.early_kill_pct, 1));
+    set('roundLate',     pct(s.late_kill_pct, 1));
+
+    var condBody = document.getElementById('roundWinCondBody');
+    var condRows = d.win_conditions || [];
+    if (!condRows.length) {
+      condBody.innerHTML = '<tr><td colspan="3" class="center muted-row">No win-condition data yet.</td></tr>';
+    } else {
+      condBody.innerHTML = condRows.map(function (r) {
+        return '<tr>' +
+          '<td>' + S.escHtml(r.win_condition || 'unknown') + '</td>' +
+          '<td class="num">' + S.fmtNum(r.rounds) + '</td>' +
+          '<td class="num">' + (r.avg_round_seconds != null ? parseFloat(r.avg_round_seconds).toFixed(2) : '—') + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    var fkBody = document.getElementById('roundFkOutcomeBody');
+    var fkRows = d.first_kill_outcomes || [];
+    if (!fkRows.length) {
+      fkBody.innerHTML = '<tr><td colspan="3" class="center muted-row">No first-kill outcome data yet.</td></tr>';
+    } else {
+      fkBody.innerHTML = fkRows.map(function (r) {
+        return '<tr>' +
+          '<td>' + S.escHtml(String(r.first_kill_side || 'unknown').toUpperCase()) + '</td>' +
+          '<td class="num">' + S.fmtNum(r.rounds) + '</td>' +
+          '<td class="num">' + pct(r.conversion_rate, 1) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+  }).catch(function () {});
+
+  // ── Match analytics ───────────────────────────────────────
+  S.fetchJson('/api/stats/match-analytics?limit=20', filters).then(function (d) {
+    var s = d.summary || {};
+    set('matchAvgDiff',      s.avg_round_diff != null ? parseFloat(s.avg_round_diff).toFixed(2) : '—');
+    set('matchCloseRate',    pct(s.close_match_rate, 1));
+    set('matchDomRate',      pct(s.dominant_match_rate, 1));
+    set('matchComebackRate', pct(s.comeback_rate, 1));
+    set('matchMomentumIdx',  pct(s.momentum_index, 1));
+    set('matchTotal',        S.fmtNum(s.matches));
+
+    var sdBody = document.getElementById('matchScoreDistBody');
+    var sdRows = d.score_distribution || [];
+    if (!sdRows.length) {
+      sdBody.innerHTML = '<tr><td colspan="2" class="center muted-row">No score distribution yet.</td></tr>';
+    } else {
+      sdBody.innerHTML = sdRows.map(function (r) {
+        return '<tr><td>' + S.fmtNum(r.round_diff) + '</td><td class="num">' + S.fmtNum(r.matches) + '</td></tr>';
+      }).join('');
+    }
+
+    var mmBody = document.getElementById('matchMomentumBody');
+    var mmRows = d.top_momentum_matches || [];
+    if (!mmRows.length) {
+      mmBody.innerHTML = '<tr><td colspan="5" class="center muted-row">No momentum data yet.</td></tr>';
+    } else {
+      mmBody.innerHTML = mmRows.map(function (r) {
+        var replayUrl = '/replay/' + encodeURI(r.path || '');
+        return '<tr>' +
+          '<td>' + S.fmtDate(r.played_at) + '</td>' +
+          '<td><a href="' + replayUrl + '">' + S.escHtml(r.map || 'unknown') + '</a></td>' +
+          '<td class="num"><span class="score-t1">' + S.fmtNum(r.t1_rounds) + '</span><span class="score-sep">–</span><span class="score-t2">' + S.fmtNum(r.t2_rounds) + '</span></td>' +
+          '<td class="num">' + S.fmtNum(r.max_streak) + '</td>' +
+          '<td class="num">' + pct(r.momentum_score, 1) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+  }).catch(function () {});
+
+})();
+</script>
+{% endblock %}

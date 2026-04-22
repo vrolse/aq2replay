@@ -1,0 +1,1351 @@
+﻿{% extends "base.html" %}
+{% block title %}Global Stats — AQ2{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.6rem;margin-bottom:1.2rem;">
+  <h1 style="font-size:1.4rem;font-weight:700;">Global Stats</h1>
+  <div style="display:flex;align-items:center;gap:.6rem;">
+    <label style="font-size:.78rem;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:.4rem;">
+      Mode:
+      <select id="modeFilter"
+        style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+               border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+        <option value="teamplay" selected>Teamplay</option>
+        <option value="team_deathmatch">Team Deathmatch (TDM)</option>
+        <option value="domination">Domination</option>
+        <option value="espionage">Espionage</option>
+        <option value="tourney">Tourney</option>
+        <option value="deathmatch">Deathmatch</option>
+        <option value="jumpmod">Jumpmod</option>
+        <option value="ctf">CTF</option>
+        <option value="team_modes">All Team Modes</option>
+        <option value="dm_modes">All DM Modes</option>
+        <option value="all">All Modes</option>
+      </select>
+    </label>
+    <label style="font-size:.78rem;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:.4rem;">
+      Period:
+      <select id="periodFilter"
+        style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+               border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+        <option value="this_week">This Week</option>
+        <option value="last_week">Last Week</option>
+        <option value="this_month">This Month</option>
+        <option value="last_month">Last Month</option>
+        <option value="this_year" selected>This Year</option>
+        <option value="last_year">Last Year</option>
+        <option value="all">All Time</option>
+      </select>
+    </label>
+    <span id="statusBadge" class="badge badge-spec" title="Index status">loading…</span>
+    {% if show_reindex_button %}
+    <button id="rebuildBtn"
+      style="background:var(--surface);border:1px solid var(--border);color:var(--text);
+             padding:.25rem .75rem;border-radius:var(--radius);cursor:pointer;font-size:.8rem;">
+      Rebuild Index
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Summary cards ── -->
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.7rem;margin-bottom:1.6rem;">
+  <div class="card" style="text-align:center;padding:1rem .8rem;">
+    <div class="stat-big" id="s-matches">—</div>
+    <div class="stat-label help-label" title="Total matches in the selected mode and period.">Matches</div>
+  </div>
+  <div class="card" style="text-align:center;padding:1rem .8rem;">
+    <div class="stat-big" id="s-players">—</div>
+    <div class="stat-label help-label" title="Distinct players seen in the selected filter.">Players</div>
+  </div>
+  <div class="card" style="text-align:center;padding:1rem .8rem;">
+    <div class="stat-big" id="s-kills">—</div>
+    <div class="stat-label help-label" title="All recorded kills across matching matches.">Total Kills</div>
+  </div>
+  <div class="card" style="text-align:center;padding:1rem .8rem;">
+    <div class="stat-big" id="s-damage">—</div>
+    <div class="stat-label help-label" title="Estimated total damage dealt across matching matches.">Total Damage</div>
+  </div>
+  <div class="card" style="text-align:center;padding:1rem .8rem;">
+    <div class="stat-big" id="s-maps">—</div>
+    <div class="stat-label help-label" title="Distinct maps represented in this filter.">Maps</div>
+  </div>
+  <div class="card" style="text-align:center;padding:1rem .8rem;">
+    <div class="stat-big" style="color:var(--green)" id="s-best">—</div>
+    <div class="stat-label help-label" title="Highest single-match kill count by one player.">Best Game (K)</div>
+  </div>
+</div>
+
+<!-- ── Records board ── -->
+<div class="section-title">Records</div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.7rem;margin-bottom:.4rem;">
+  <div class="card record-card" id="rec-kills">
+    <div class="rec-label">Most Kills (single game)</div>
+    <div class="rec-value">—</div>
+    <div class="rec-meta"></div>
+  </div>
+  <div class="card record-card" id="rec-kd">
+    <div class="rec-label">Best K/D (single game, min 3K)</div>
+    <div class="rec-value">—</div>
+    <div class="rec-meta"></div>
+  </div>
+  <div class="card record-card" id="rec-acc">
+    <div class="rec-label">Best Accuracy (single game)</div>
+    <div class="rec-value">—</div>
+    <div class="rec-meta"></div>
+  </div>
+  <div class="card record-card" id="rec-dmg">
+    <div class="rec-label">Most Damage (single game)</div>
+    <div class="rec-value">—</div>
+    <div class="rec-meta"></div>
+  </div>
+  <div class="card record-card" id="rec-hs">
+    <div class="rec-label">Most Headshot Kills (single game)</div>
+    <div class="rec-value">—</div>
+    <div class="rec-meta"></div>
+  </div>
+  <div class="card record-card" id="rec-long">
+    <div class="rec-label">Longest Match</div>
+    <div class="rec-value">—</div>
+    <div class="rec-meta"></div>
+  </div>
+</div>
+
+<!-- ── First-kill dashboard ── -->
+<div class="section-title" style="margin-top:2rem;">First Kill Dashboard</div>
+<div class="analytics-two-col" style="display:grid;grid-template-columns:1.25fr 1fr;gap:.7rem;margin-bottom:.7rem;">
+  <div class="card" style="padding:.9rem 1rem;">
+    <div class="mini-grid" id="firstKillSummaryGrid">
+      <div class="mini-stat"><span class="help-label" title="Total tracked rounds in the current filter.">Rounds</span><strong id="fk-total-rounds">—</strong></div>
+      <div class="mini-stat"><span class="help-label" title="Percent of rounds where a first kill happened.">FK Presence</span><strong id="fk-presence">—</strong></div>
+      <div class="mini-stat"><span class="help-label" title="When a first kill happens, percent of those rounds won by that same side.">FK Conversion</span><strong id="fk-conv">—</strong></div>
+      <div class="mini-stat"><span class="help-label" title="Team 1 win rate in rounds where Team 1 got first kill.">T1 FK Win Rate</span><strong id="fk-t1-conv">—</strong></div>
+      <div class="mini-stat"><span class="help-label" title="Team 2 win rate in rounds where Team 2 got first kill.">T2 FK Win Rate</span><strong id="fk-t2-conv">—</strong></div>
+      <div class="mini-stat"><span class="help-label" title="Number of rounds where first-kill side converted to a win.">Converted Rounds</span><strong id="fk-converted-rounds">—</strong></div>
+    </div>
+  </div>
+  <div class="card" style="padding:.9rem 1rem;">
+    <div class="split-list-grid">
+      <div>
+        <div class="list-caption">Top Players</div>
+        <div id="fkTopPlayers" class="tiny-list">—</div>
+      </div>
+      <div>
+        <div class="list-caption">Top Weapons</div>
+        <div id="fkTopWeapons" class="tiny-list">—</div>
+      </div>
+      <div>
+        <div class="list-caption">Top Locations</div>
+        <div id="fkTopLocations" class="tiny-list">—</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Map where the first-kill hotspot occurred.">Map</th>
+        <th class="help-label" title="Weapon used for the first kill.">Weapon</th>
+        <th class="help-label" title="Hit location of the first-kill shot.">Location</th>
+        <th class="num help-label" title="Count of first kills for this map/weapon/location combination.">First Kills</th>
+      </tr>
+    </thead>
+    <tbody id="fkMapHotspotsBody">
+      <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Team analytics ── -->
+<div class="section-title" style="margin-top:2rem;">Team Analytics</div>
+<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem;">
+  <div class="mini-grid">
+    <div class="mini-stat"><span class="help-label" title="Tracked rounds in selected mode and period.">Total Rounds</span><strong id="team-total-rounds">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Share of rounds won by Team 1.">T1 Round Win Rate</span><strong id="team-t1-win-rate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Share of rounds won by Team 2.">T2 Round Win Rate</span><strong id="team-t2-win-rate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Team 1 conversion after getting first kill.">T1 FK Win Rate</span><strong id="team-t1-fk-rate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Team 2 conversion after getting first kill.">T2 FK Win Rate</span><strong id="team-t2-fk-rate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Rounds ending in a tie/no winner.">Tied Rounds</span><strong id="team-ties">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Matches in this filter where captains were detected from scoreboard markers.">Captain Matches</span><strong id="team-captain-matches">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Distinct captain names detected in this filter.">Distinct Captains</span><strong id="team-captain-distinct">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Average number of captain changes per captain-tracked match.">Captain Switches / Match</span><strong id="team-captain-switches">—</strong></div>
+  </div>
+</div>
+<div class="card" style="padding:0;overflow-x:auto;margin-bottom:.7rem;">
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Side identifier used by the replay (Team 1 or Team 2).">Team</th>
+        <th class="num help-label" title="Total rounds played by this team in the selected filter.">Rounds</th>
+        <th class="num help-label" title="Percent of rounds won by this team.">Win %</th>
+        <th class="num help-label" title="Percent of rounds where at least one player from this team survived.">Survival %</th>
+        <th class="num help-label" title="Win percentage when this team secures first kill.">FK Win %</th>
+        <th class="num help-label" title="Win rate when outnumbered in the round.">Clutch %</th>
+        <th class="num help-label" title="Kills divided by deaths.">K/D</th>
+      </tr>
+    </thead>
+    <tbody id="teamAnalyticsBody">
+      <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Map name for this team split.">Map</th>
+        <th class="help-label" title="Side identifier used by the replay (Team 1 or Team 2).">Team</th>
+        <th class="num help-label" title="Rounds played by this team on this map.">Rounds</th>
+        <th class="num help-label" title="Round win percentage for this team on this map.">Win %</th>
+        <th class="num help-label" title="Win percentage on rounds where this team got first kill.">FK Win %</th>
+        <th class="num help-label" title="Percent of rounds on this map where this team had survivors.">Survival %</th>
+      </tr>
+    </thead>
+    <tbody id="teamMapBody">
+      <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="card" style="padding:0;overflow-x:auto;margin-top:.7rem;">
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Side identifier used by the replay (Team 1 or Team 2).">Team</th>
+        <th class="help-label" title="Detected captain name for the selected team.">Captain</th>
+        <th class="num help-label" title="Matches where this captain was primary for the team.">Matches</th>
+        <th class="num help-label" title="Match win percentage while this captain was primary.">Match Win %</th>
+        <th class="num help-label" title="Round win percentage while this captain was primary.">Round Win %</th>
+        <th class="num help-label" title="Total detected captain changes across those matches.">Switches</th>
+      </tr>
+    </thead>
+    <tbody id="teamCaptainBody">
+      <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Round analytics ── -->
+<div class="section-title" style="margin-top:2rem;">Round Analytics</div>
+<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem;">
+  <div class="mini-grid">
+    <div class="mini-stat"><span class="help-label" title="Average round duration.">Avg Round</span><strong id="round-avg">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Shortest recorded round duration.">Shortest</span><strong id="round-shortest">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Longest recorded round duration.">Longest</span><strong id="round-longest">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Average total kills per round.">Avg Kills / Round</span><strong id="round-kpr">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Percent of rounds with early engagements/first kills.">Early Kills</span><strong id="round-early">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Percent of rounds with late engagements/first kills.">Late Kills</span><strong id="round-late">—</strong></div>
+  </div>
+</div>
+<div class="analytics-two-col" style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem;">
+  <div class="card" style="padding:0;overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th class="help-label" title="How the round was won (elimination, objective, timeout, and so on).">Win Condition</th>
+          <th class="num help-label" title="Number of rounds ending with this condition.">Rounds</th>
+          <th class="num help-label" title="Average duration in seconds for rounds with this win condition.">Avg Round (s)</th>
+        </tr>
+      </thead>
+      <tbody id="roundWinConditionBody">
+        <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:1rem;">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card" style="padding:0;overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th class="help-label" title="Which side secured first kill in the round.">First Kill Side</th>
+          <th class="num help-label" title="Number of rounds where this side got first kill.">Rounds</th>
+          <th class="num help-label" title="Percent of rounds won by the side that got first kill.">Conversion %</th>
+        </tr>
+      </thead>
+      <tbody id="roundFkOutcomeBody">
+        <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:1rem;">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Match analytics ── -->
+<div class="section-title" style="margin-top:2rem;">Match Analytics</div>
+<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem;">
+  <div class="mini-grid">
+    <div class="mini-stat"><span class="help-label" title="Average final round-score gap between teams.">Avg Round Diff</span><strong id="match-avg-diff">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Share of matches decided by a small score gap.">Close Match Rate</span><strong id="match-close-rate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Share of matches decided by large score gaps.">Dominant Match Rate</span><strong id="match-dom-rate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Share of matches where a trailing side came back to win.">Comeback Rate</span><strong id="match-comeback-rate">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Volatility indicator based on lead changes and swing intensity.">Momentum Index</span><strong id="match-momentum-index">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Total matches counted in this analytics window.">Total Matches</span><strong id="match-total">—</strong></div>
+  </div>
+</div>
+<div class="card" style="padding:0;overflow-x:auto;margin-bottom:.7rem;">
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Final round-score gap between the two teams.">Round Diff</th>
+        <th class="num help-label" title="Number of matches ending with this round difference.">Matches</th>
+      </tr>
+    </thead>
+    <tbody id="matchScoreDistBody">
+      <tr><td colspan="2" style="text-align:center;color:var(--muted);padding:1rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Match date.">Date</th>
+        <th class="help-label" title="Map played.">Map</th>
+        <th class="num help-label" title="Final round score (Team 1 - Team 2).">Score</th>
+        <th class="num help-label" title="Longest single-player kill streak in the match.">Max Streak</th>
+        <th class="num help-label" title="Match-level momentum score; higher means more swings/volatility.">Momentum</th>
+      </tr>
+    </thead>
+    <tbody id="matchMomentumBody">
+      <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Weapon effectiveness ── -->
+<div class="section-title" style="margin-top:2rem;">Weapon Effectiveness</div>
+<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem;">
+  <div class="mini-grid">
+    <div class="mini-stat"><span class="help-label" title="Enemy kills only (team kills excluded).">Total Enemy Kills</span><strong id="wa-total-kills">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Count of distinct weapons seen in this filter.">Weapons Used</span><strong id="wa-weapon-count">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Number of maps with weapon analytics data.">Maps Covered</span><strong id="wa-map-count">—</strong></div>
+    <div class="mini-stat"><span class="help-label" title="Overall win rate proxy derived from weapon outcomes.">Global Weapon Win Rate</span><strong id="wa-win-rate">—</strong></div>
+  </div>
+</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Map where this weapon lead was measured.">Map</th>
+        <th class="help-label" title="Weapon with most kills on that map in this filter.">Best Weapon</th>
+        <th class="num help-label" title="Kill count for that map-leading weapon.">Kills</th>
+        <th class="num help-label" title="Headshot percentage for that best weapon on this map.">HS%</th>
+        <th class="num help-label" title="Win-rate proxy when that weapon secures kills.">Win%</th>
+      </tr>
+    </thead>
+    <tbody id="weaponMapLeadersBody">
+      <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── AI meta insights ── -->
+<div class="section-title" style="margin-top:2rem;display:flex;align-items:center;justify-content:space-between;gap:.6rem;">
+  <span>AI Meta Insights</span>
+  <a href="/rankings" style="font-size:.78rem;color:var(--accent);">Open rankings →</a>
+</div>
+<div class="card" style="padding:.9rem 1rem;">
+  <div id="aiInsights" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.6rem;">
+    <div style="color:var(--muted);font-size:.85rem;">Loading insights...</div>
+  </div>
+</div>
+
+<!-- ── Activity timeline ── -->
+<div class="section-title" style="margin-top:2rem;">Activity</div>
+<div class="card" style="padding:1rem 1.2rem;">
+  <div id="activityChart" style="display:flex;align-items:flex-end;gap:3px;height:80px;overflow-x:auto;"></div>
+  <div id="activityLegend" style="font-size:.72rem;color:var(--muted);margin-top:.4rem;text-align:center;"></div>
+  <div id="activityWeekFilter" style="display:none;align-items:center;justify-content:center;gap:.55rem;margin-top:.45rem;">
+    <span id="activityWeekFilterText" style="font-size:.74rem;color:var(--muted);"></span>
+    <button id="activityWeekFilterClear" type="button"
+      style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:.12rem .5rem;border-radius:var(--radius);cursor:pointer;font-size:.72rem;">Clear</button>
+  </div>
+</div>
+
+<!-- ── Leaderboard ── -->
+<div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:2rem;">
+  <span>Leaderboard</span>
+  <div style="display:flex;align-items:center;gap:.8rem;">
+    <label style="font-size:.78rem;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:.4rem;">
+      Min games:
+      <select id="minGames"
+        style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+               border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+        <option value="1">1</option>
+        <option value="3">3</option>
+        <option value="5" selected>5</option>
+        <option value="10">10</option>
+        <option value="20">20</option>
+      </select>
+    </label>
+    <label style="font-size:.78rem;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:.4rem;">
+      Per page:
+      <select id="pageSize"
+        style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+               border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="0">All</option>
+      </select>
+    </label>
+  </div>
+</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="lbTable">
+    <thead>
+      <tr>
+        <th class="num help-label" style="width:2.5rem;" title="Leaderboard position after current sorting.">#</th>
+        <th data-sort="name" class="sortable help-label" title="Player name.">Player</th>
+        <th data-sort="games"     class="num sortable help-label" title="Matches played in the current filter.">Games</th>
+        <th data-sort="kills"     class="num sortable help-label" title="Total kills.">Kills</th>
+        <th data-sort="deaths"    class="num sortable help-label" title="Total deaths.">Deaths</th>
+        <th data-sort="kd"        class="num sortable help-label" title="Kills divided by deaths.">K/D</th>
+        <th data-sort="avg_kills" class="num sortable help-label" title="Average kills per match.">Avg&nbsp;K</th>
+        <th data-sort="damage"    class="num sortable help-label" title="Estimated total damage dealt.">Damage</th>
+        <th data-sort="hs_kills"  class="num sortable help-label" title="Headshot kills.">HS</th>
+        <th data-sort="avg_acc"   class="num sortable help-label" title="Average accuracy percentage.">Acc%</th>
+        <th data-sort="head_pct"  class="num sortable help-label" title="Share of hits to head location.">Head%</th>
+        <th data-sort="stom_pct"  class="num sortable help-label" title="Share of hits to stomach location.">Stom%</th>
+        <th data-sort="chest_pct" class="num sortable help-label" title="Share of hits to chest location.">Chest%</th>
+        <th data-sort="legs_pct"  class="num sortable help-label" title="Share of hits to leg location.">Legs%</th>
+        <th data-sort="awards_impressive" class="num sortable help-label" title="Impressive awards (5 kill streak).">Impr</th>
+        <th data-sort="awards_accuracy"   class="num sortable help-label" title="Accuracy awards (3 consecutive headshots).">Acc</th>
+        <th data-sort="awards_excellent"  class="num sortable help-label" title="Excellent awards (12 kill streak).">Excl</th>
+      </tr>
+    </thead>
+    <tbody id="lbBody">
+      <tr><td colspan="17" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div id="lbPager" style="display:none;align-items:center;justify-content:center;gap:.6rem;margin-top:.6rem;font-size:.82rem;color:var(--muted);">
+  <button id="lbPrevBtn"
+    style="background:var(--surface);border:1px solid var(--border);color:var(--text);
+           padding:.2rem .65rem;border-radius:var(--radius);cursor:pointer;font-size:.78rem;">← Prev</button>
+  <span id="lbPageInfo"></span>
+  <button id="lbNextBtn"
+    style="background:var(--surface);border:1px solid var(--border);color:var(--text);
+           padding:.2rem .65rem;border-radius:var(--radius);cursor:pointer;font-size:.78rem;">Next →</button>
+</div>
+
+<!-- ── Recent matches ── -->
+<div class="section-title" style="margin-top:2rem;">Recent Matches</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="recentTable">
+    <thead>
+      <tr>
+        <th class="help-label" title="Match date.">Date</th>
+        <th class="help-label" title="Map played.">Map</th>
+        <th class="center help-label" title="Final round score (Team 1 - Team 2).">Score</th>
+        <th class="num help-label" title="Number of players in the replay.">Players</th>
+        <th class="num help-label" title="Total kills in the match.">Kills</th>
+        <th class="num help-label" title="Match duration.">Duration</th>
+      </tr>
+    </thead>
+    <tbody id="recentBody">
+      <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Weapon breakdown ── -->
+<div class="section-title" style="margin-top:2rem;">Weapons</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="weaponTable">
+    <thead>
+      <tr>
+        <th class="sortable help-label" data-sort="weapon" title="Weapon name.">Weapon</th>
+        <th class="num sortable help-label" data-sort="kills" title="Total kills with this weapon.">Kills</th>
+        <th class="num sortable help-label" data-sort="kill_pct" title="Share of total kills made by this weapon.">Kill %</th>
+        <th class="num sortable help-label" data-sort="hs" title="Headshot kills with this weapon.">HS Kills</th>
+        <th class="num sortable help-label" data-sort="hs_pct" title="Headshot percentage for this weapon.">HS %</th>
+        <th class="help-label" style="min-width:120px" title="Visual bar showing the kill-share proportion.">Share</th>
+      </tr>
+    </thead>
+    <tbody id="weaponBody">
+      <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Maps + win rates ── -->
+<div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:2rem;">
+  <span>Maps</span>
+  <label style="font-size:.78rem;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:.4rem;">
+    Per page:
+    <select id="mapsPageSize"
+      style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+             border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+      <option value="25" selected>25</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+      <option value="0">All</option>
+    </select>
+  </label>
+</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="mapsTable">
+    <thead>
+      <tr>
+        <th class="sortable help-label" data-sort="map" title="Map name.">Map</th>
+        <th class="num sortable help-label" data-sort="matches" title="Number of matches played on this map.">Matches</th>
+        <th class="num sortable help-label" data-sort="kills" title="Total kills recorded on this map.">Total Kills</th>
+        <th class="num sortable help-label" data-sort="avg_kills" title="Average total kills per match on this map.">Avg K/Match</th>
+        <th class="num sortable help-label" data-sort="players" title="Distinct players seen on this map.">Players</th>
+        <th class="num sortable help-label" data-sort="avg_duration_min" title="Average match duration on this map.">Avg Duration</th>
+        <th class="num sortable help-label" data-sort="t1_wins" style="color:var(--t1)" title="Matches won by Team 1.">T1 W</th>
+        <th class="num sortable help-label" data-sort="t2_wins" style="color:var(--t2)" title="Matches won by Team 2.">T2 W</th>
+        <th class="num sortable help-label" data-sort="draws" style="color:var(--muted)" title="Matches ending with tied round score.">Draws</th>
+      </tr>
+    </thead>
+    <tbody id="mapsBody">
+      <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div id="mapsPager" style="display:none;align-items:center;justify-content:center;gap:.6rem;margin-top:.6rem;font-size:.82rem;color:var(--muted);">
+  <button id="mapsPrevBtn"
+    style="background:var(--surface);border:1px solid var(--border);color:var(--text);
+           padding:.2rem .65rem;border-radius:var(--radius);cursor:pointer;font-size:.78rem;">← Prev</button>
+  <span id="mapsPageInfo"></span>
+  <button id="mapsNextBtn"
+    style="background:var(--surface);border:1px solid var(--border);color:var(--text);
+           padding:.2rem .65rem;border-radius:var(--radius);cursor:pointer;font-size:.78rem;">Next →</button>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.stat-big   { font-size:1.6rem;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums; }
+.stat-label { font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:.2rem; }
+.record-card { padding:.8rem 1rem;min-width:0;overflow:hidden; }
+.rec-label  { font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:.3rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.rec-value  { font-size:1.4rem;font-weight:700;color:var(--yellow);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.rec-meta   { font-size:.78rem;color:var(--muted);margin-top:.2rem;min-width:0; }
+.rec-meta a { color:var(--accent); }
+.rec-meta .rec-line { display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+th.sortable { cursor:pointer;user-select:none; }
+th.sortable:hover { color:var(--text); }
+.act-bar    { flex:0 0 auto;border-radius:2px 2px 0 0;background:var(--accent);opacity:.7;
+              transition:opacity .15s;cursor:pointer;min-width:6px; }
+.act-bar:hover { opacity:1; }
+.act-bar-active { opacity:1;border:1px solid rgba(255,255,255,.65);box-shadow:0 0 0 1px rgba(0,0,0,.25) inset; }
+.bar-outer  { background:var(--surface);border-radius:3px;height:8px;overflow:hidden; }
+.bar-inner  { background:var(--accent);height:100%;border-radius:3px;transition:width .2s; }
+.mini-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.45rem .65rem; }
+.mini-stat { display:flex;justify-content:space-between;gap:.7rem;border-bottom:1px solid var(--border);padding:.35rem 0;font-size:.82rem; }
+.mini-stat span { color:var(--muted); }
+.mini-stat strong { font-variant-numeric:tabular-nums;color:var(--text); }
+.split-list-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem; }
+.list-caption { font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:.35rem; }
+.tiny-list { font-size:.82rem;line-height:1.35; }
+.tiny-list .muted { color:var(--muted); }
+@media (max-width: 980px) {
+  .analytics-two-col { grid-template-columns:1fr !important; }
+  .split-list-grid { grid-template-columns:1fr !important; }
+}
+@media (max-width: 700px) {
+  .mini-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+</style>
+
+<script>
+(function () {
+  'use strict';
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function fmt(n, dec) {
+    if (n == null || n === '') return '—';
+    const v = parseFloat(n);
+    if (isNaN(v)) return '—';
+    return dec != null ? v.toFixed(dec) : v.toLocaleString();
+  }
+  function fmtDate(unix) {
+    if (!unix) return '—';
+    return new Date(unix * 1000).toLocaleDateString(undefined,
+      { year:'numeric', month:'short', day:'numeric' });
+  }
+  function pct(v, dec) {
+    if (v == null || v === '') return '—';
+    const n = parseFloat(v);
+    if (isNaN(n)) return '—';
+    return n.toFixed(dec != null ? dec : 1) + '%';
+  }
+  function secs(v) {
+    if (v == null || v === '') return '—';
+    const n = parseFloat(v);
+    if (isNaN(n)) return '—';
+    return n.toFixed(1) + 's';
+  }
+  const _modeAliases = {
+    tdm: 'team_deathmatch',
+    dm: 'deathmatch',
+    all_team_modes: 'team_modes',
+    all_dm_modes: 'dm_modes',
+  };
+  const _modeAllowed = new Set([
+    'teamplay', 'team_deathmatch', 'domination', 'espionage', 'tourney',
+    'deathmatch', 'jumpmod', 'ctf', 'team_modes', 'dm_modes', 'all'
+  ]);
+
+  function normalizeWeek(rawWeek) {
+    const raw = String(rawWeek || '').trim();
+    const m = raw.match(/^(\d{4})[-_]?w?(\d{1,2})$/i);
+    if (!m) return '';
+    const weekNum = parseInt(m[2], 10);
+    if (!Number.isFinite(weekNum) || weekNum < 0 || weekNum > 53) return '';
+    return `${m[1]}-${String(weekNum).padStart(2, '0')}`;
+  }
+
+  const _modeSelect = document.getElementById('modeFilter');
+  const _urlParams = new URLSearchParams(window.location.search);
+  const _modeRaw = String(_urlParams.get('mode') || 'teamplay').toLowerCase();
+  const _modeFromUrl = _modeAliases[_modeRaw] || _modeRaw;
+  const _currentMode = _modeAllowed.has(_modeFromUrl) ? _modeFromUrl : 'teamplay';
+  const _periodAliases = {
+    alltime: 'all',
+    all_time: 'all',
+    thisweek: 'this_week',
+    lastweek: 'last_week',
+    thismonth: 'this_month',
+    lastmonth: 'last_month',
+    thisyear: 'this_year',
+    lastyear: 'last_year',
+    previous_year: 'last_year',
+  };
+  const _periodAllowed = new Set([
+    'this_week', 'last_week', 'this_month', 'last_month', 'this_year', 'last_year', 'all'
+  ]);
+  const _periodSelect = document.getElementById('periodFilter');
+  const _periodRaw = String(_urlParams.get('period') || 'this_year').toLowerCase();
+  const _periodFromUrl = _periodAliases[_periodRaw] || _periodRaw;
+  const _currentPeriod = _periodAllowed.has(_periodFromUrl) ? _periodFromUrl : 'this_year';
+  const _currentWeek = normalizeWeek(_urlParams.get('week'));
+
+  function reloadWithWeekFilter(weekValue) {
+    const params = new URLSearchParams(window.location.search);
+    const normalized = normalizeWeek(weekValue);
+    if (normalized) params.set('week', normalized);
+    else params.delete('week');
+    const qs = params.toString();
+    window.location.search = qs ? ('?' + qs) : '';
+  }
+
+  if (_modeSelect) {
+    _modeSelect.value = _currentMode;
+    _modeSelect.addEventListener('change', function () {
+      const selected = String(this.value || 'teamplay').toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      if (selected === 'teamplay') params.delete('mode');
+      else params.set('mode', selected);
+      params.delete('week');
+      const qs = params.toString();
+      window.location.search = qs ? ('?' + qs) : '';
+    });
+  }
+  if (_periodSelect) {
+    _periodSelect.value = _currentPeriod;
+    _periodSelect.addEventListener('change', function () {
+      const selected = String(this.value || 'this_year').toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      if (selected === 'this_year') params.delete('period');
+      else params.set('period', selected);
+      params.delete('week');
+      const qs = params.toString();
+      window.location.search = qs ? ('?' + qs) : '';
+    });
+  }
+  function statsFetch(path) {
+    const sep = path.includes('?') ? '&' : '?';
+    let url = path + sep +
+      'mode=' + encodeURIComponent(_currentMode) +
+      '&period=' + encodeURIComponent(_currentPeriod);
+    if (_currentWeek) {
+      url += '&week=' + encodeURIComponent(_currentWeek);
+    }
+    return fetch(url);
+  }
+  function setEl(id, val) { const e = document.getElementById(id); if (e) e.textContent = val; }
+  function playerLink(name) {
+    return `<a href="/player/${encodeURIComponent(name)}"
+               style="color:var(--text);font-weight:600;">${escHtml(name)}</a>`;
+  }
+  function modeBadge(modeDetail, modeGroup) {
+    const style = 'font-size:.7rem;color:#fff;border-radius:3px;padding:1px 4px;vertical-align:middle;';
+    const map = {
+      teamplay: ['TP', 'var(--accent)'],
+      team_deathmatch: ['TDM', '#3f8cff'],
+      domination: ['DOM', '#0aa58f'],
+      espionage: ['ESP', '#6b62d6'],
+      tourney: ['TOUR', '#9a7b2f'],
+      deathmatch: ['DM', '#666'],
+      jumpmod: ['JMP', '#888'],
+      ctf: ['CTF', 'var(--accent2)'],
+    };
+    const raw = String(modeDetail || '').toLowerCase();
+    const fallback = modeGroup === 'ctf'
+      ? 'ctf'
+      : (modeGroup === 'dm' ? 'deathmatch' : 'teamplay');
+    const key = map[raw] ? raw : fallback;
+    const def = map[key];
+    return ` <span style="${style}background:${def[1]};">${def[0]}</span>`;
+  }
+
+  // ── Summary ────────────────────────────────────────────────────────────────
+  statsFetch('/api/stats/summary').then(r=>r.json()).then(d => {
+    setEl('s-matches', fmt(d.total_matches));
+    setEl('s-players', fmt(d.total_players));
+    setEl('s-kills',   fmt(d.total_kills));
+    setEl('s-damage',  fmt(d.total_damage));
+    setEl('s-maps',    fmt(d.total_maps));
+    setEl('s-best',    fmt(d.best_game_kills));
+  }).catch(()=>{});
+
+  // ── Status badge ───────────────────────────────────────────────────────────
+  const STATUS_POLL_IDLE_MS = 60000;
+  const STATUS_POLL_RUNNING_MS = 10000;
+  const STATUS_POLL_HIDDEN_MS = 30000;
+  let _statusPollTimer = null;
+  let _statusInFlight = false;
+
+  function scheduleStatusPoll(ms) {
+    if (_statusPollTimer) clearTimeout(_statusPollTimer);
+    const jitter = Math.floor(Math.random() * 1000); // reduce synchronized bursts across clients
+    _statusPollTimer = setTimeout(loadStatus, ms + jitter);
+  }
+
+  function loadStatus() {
+    if (_statusInFlight) return;
+    if (document.hidden) {
+      scheduleStatusPoll(STATUS_POLL_HIDDEN_MS);
+      return;
+    }
+    _statusInFlight = true;
+    fetch('/api/stats/status').then(r=>r.json()).then(d => {
+      const badge = document.getElementById('statusBadge');
+      if (!badge) return;
+      if (d.running) {
+        badge.textContent = `Indexing… ${d.indexed}/${d.total}`;
+        badge.className = 'badge badge-t1';
+        scheduleStatusPoll(STATUS_POLL_RUNNING_MS);
+      } else {
+        badge.textContent = `${d.indexed} / ${d.total} indexed`;
+        badge.className = 'badge badge-spec';
+        scheduleStatusPoll(STATUS_POLL_IDLE_MS);
+      }
+    }).catch(()=>{
+      scheduleStatusPoll(STATUS_POLL_HIDDEN_MS);
+    }).finally(() => {
+      _statusInFlight = false;
+    });
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    loadStatus();
+  });
+  loadStatus();
+  const rebuildBtn = document.getElementById('rebuildBtn');
+  if (rebuildBtn) {
+    rebuildBtn.addEventListener('click', function () {
+      this.disabled = true;
+      fetch('/api/stats/reindex', {method:'POST'})
+        .then(() => { loadStatus(); setTimeout(() => { this.disabled = false; }, 3000); })
+        .catch(() => { this.disabled = false; });
+    });
+  }
+
+  // ── Records ────────────────────────────────────────────────────────────────
+  statsFetch('/api/stats/records').then(r=>r.json()).then(recs => {
+    function fillRec(id, value, suffix, name, mapName, path, date) {
+      const card = document.getElementById(id);
+      if (!card) return;
+      card.querySelector('.rec-value').textContent = value != null ? value + (suffix||'') : '—';
+      let line1 = '';
+      if (name)    line1 += playerLink(name);
+      if (mapName) line1 += (name ? ' on ' : '') + `<strong>${escHtml(mapName)}</strong>`;
+      if (date)    line1 += ` <span style="color:var(--muted)">${fmtDate(date)}</span>`;
+      let line2 = '';
+      if (path)    line2 = `<a href="/replay/${encodeURIComponent(path)}" style="font-size:.72rem;">&#9654; replay</a>`;
+      const meta = card.querySelector('.rec-meta');
+      meta.innerHTML = (line1 ? `<span class="rec-line">${line1}</span>` : '') +
+                       (line2 ? `<span class="rec-line" style="margin-top:.15rem;">${line2}</span>` : '');
+    }
+    const r = recs;
+    if (r.most_kills)    fillRec('rec-kills', r.most_kills.value,    '',    r.most_kills.name,    r.most_kills.map,    r.most_kills.path,    r.most_kills.played_at);
+    if (r.best_kd)       fillRec('rec-kd',    r.best_kd.value,       '',    r.best_kd.name,       r.best_kd.map,       r.best_kd.path,       r.best_kd.played_at);
+    if (r.best_acc)      fillRec('rec-acc',   r.best_acc.value,      '%',   r.best_acc.name,      r.best_acc.map,      r.best_acc.path,      r.best_acc.played_at);
+    if (r.most_damage)   fillRec('rec-dmg',   r.most_damage.value,   '',    r.most_damage.name,   r.most_damage.map,   r.most_damage.path,   r.most_damage.played_at);
+    if (r.most_hs)       fillRec('rec-hs',    r.most_hs.value,       '',    r.most_hs.name,       r.most_hs.map,       r.most_hs.path,       r.most_hs.played_at);
+    if (r.longest_match) fillRec('rec-long',  r.longest_match.value, ' min', null,                r.longest_match.map, r.longest_match.path, r.longest_match.played_at);
+  }).catch(()=>{});
+
+  // ── First-kill dashboard ──────────────────────────────────────────────────
+  statsFetch('/api/stats/first-kill?limit=12').then(r=>r.json()).then(d => {
+    const s = d.summary || {};
+    setEl('fk-total-rounds', fmt(s.total_rounds));
+    setEl('fk-presence', pct(s.first_kill_presence_rate, 1));
+    setEl('fk-conv', pct(s.first_kill_conversion_rate, 1));
+    setEl('fk-t1-conv', pct(s.team1_first_kill_conversion_rate, 1));
+    setEl('fk-t2-conv', pct(s.team2_first_kill_conversion_rate, 1));
+    setEl('fk-converted-rounds', fmt(s.first_kill_to_win_rounds));
+
+    function renderTinyList(elId, rows, valueKey) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      if (!rows || !rows.length) {
+        el.innerHTML = '<span class="muted">No data</span>';
+        return;
+      }
+      el.innerHTML = rows.map((row) => {
+        const labelKey = row.name != null ? 'name' : (row.weapon != null ? 'weapon' : 'location');
+        const label = row[labelKey] != null ? row[labelKey] : 'unknown';
+        const value = row[valueKey] != null ? row[valueKey] : 0;
+        return `<div style="display:flex;justify-content:space-between;gap:.5rem;border-bottom:1px solid var(--border);padding:.2rem 0;">
+          <span>${escHtml(String(label))}</span>
+          <strong style="font-variant-numeric:tabular-nums;">${fmt(value)}</strong>
+        </div>`;
+      }).join('');
+    }
+
+    renderTinyList('fkTopPlayers', d.top_players || [], 'first_kills');
+    renderTinyList('fkTopWeapons', d.top_weapons || [], 'first_kills');
+    renderTinyList('fkTopLocations', d.top_locations || [], 'first_kills');
+
+    const body = document.getElementById('fkMapHotspotsBody');
+    const rows = d.map_hotspots || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1rem;">No hotspot data yet.</td></tr>';
+    } else {
+      body.innerHTML = rows.map((row) => `<tr>
+        <td><a href="/map/${encodeURIComponent(row.map)}" style="font-weight:600;color:var(--text);">${escHtml(row.map)}</a></td>
+        <td>${escHtml(row.weapon || 'unknown')}</td>
+        <td>${escHtml(row.location || 'unknown')}</td>
+        <td class="num">${fmt(row.first_kills)}</td>
+      </tr>`).join('');
+    }
+  }).catch(()=>{});
+
+  // ── Team analytics ────────────────────────────────────────────────────────
+  statsFetch('/api/stats/team-analytics?limit=30').then(r=>r.json()).then(d => {
+    const s = d.summary || {};
+    setEl('team-total-rounds', fmt(s.total_rounds));
+    setEl('team-t1-win-rate', pct(s.team1_round_win_rate, 1));
+    setEl('team-t2-win-rate', pct(s.team2_round_win_rate, 1));
+    setEl('team-t1-fk-rate', pct(s.team1_first_kill_win_rate, 1));
+    setEl('team-t2-fk-rate', pct(s.team2_first_kill_win_rate, 1));
+    setEl('team-ties', fmt(s.tied_rounds));
+    setEl('team-captain-matches', fmt(s.matches_with_captains));
+    setEl('team-captain-distinct', fmt(s.distinct_captains));
+    setEl('team-captain-switches', fmt(s.captain_switches_per_match, 2));
+
+    const teamBody = document.getElementById('teamAnalyticsBody');
+    const teams = d.teams || [];
+    if (!teams.length) {
+      teamBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:1rem;">No team analytics data yet.</td></tr>';
+    } else {
+      teamBody.innerHTML = teams.map((row) => `<tr>
+        <td><strong style="color:${parseInt(row.team,10)===1?'var(--t1)':'var(--t2)'};">${escHtml(row.team_label || ('Team ' + row.team))}</strong></td>
+        <td class="num">${fmt(row.rounds)}</td>
+        <td class="num">${pct(row.round_win_rate, 1)}</td>
+        <td class="num">${pct(row.survival_rate, 1)}</td>
+        <td class="num">${pct(row.first_kill_win_rate, 1)}</td>
+        <td class="num">${pct(row.clutch_rate, 1)}</td>
+        <td class="num">${fmt(row.kd, 2)}</td>
+      </tr>`).join('');
+    }
+
+    const teamMapBody = document.getElementById('teamMapBody');
+    const mapRows = d.map_breakdown || [];
+    if (!mapRows.length) {
+      teamMapBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1rem;">No map team analytics yet.</td></tr>';
+    } else {
+      teamMapBody.innerHTML = mapRows.map((row) => `<tr>
+        <td><a href="/map/${encodeURIComponent(row.map)}" style="font-weight:600;color:var(--text);">${escHtml(row.map)}</a></td>
+        <td style="color:${parseInt(row.team,10)===1?'var(--t1)':'var(--t2)'};">${escHtml(row.team_label || ('Team ' + row.team))}</td>
+        <td class="num">${fmt(row.rounds)}</td>
+        <td class="num">${pct(row.round_win_rate, 1)}</td>
+        <td class="num">${pct(row.first_kill_win_rate, 1)}</td>
+        <td class="num">${pct(row.survival_rate, 1)}</td>
+      </tr>`).join('');
+    }
+
+    const teamCaptainBody = document.getElementById('teamCaptainBody');
+    const captainRows = d.captains || [];
+    if (!captainRows.length) {
+      teamCaptainBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1rem;">No captain analytics yet.</td></tr>';
+    } else {
+      teamCaptainBody.innerHTML = captainRows.map((row) => `<tr>
+        <td style="color:${parseInt(row.team,10)===1?'var(--t1)':'var(--t2)'};">${escHtml(row.team_label || ('Team ' + row.team))}</td>
+        <td><a href="/player/${encodeURIComponent(row.captain_name)}" style="font-weight:600;color:var(--text);">${escHtml(row.captain_name || 'unknown')}</a></td>
+        <td class="num">${fmt(row.matches)}</td>
+        <td class="num">${pct(row.match_win_rate, 1)}</td>
+        <td class="num">${pct(row.round_win_rate, 1)}</td>
+        <td class="num">${fmt(row.captain_switches)}</td>
+      </tr>`).join('');
+    }
+  }).catch(()=>{});
+
+  // ── Round analytics ───────────────────────────────────────────────────────
+  statsFetch('/api/stats/round-analytics?limit=30').then(r=>r.json()).then(d => {
+    const s = d.summary || {};
+    setEl('round-avg', secs(s.avg_round_seconds));
+    setEl('round-shortest', secs(s.shortest_round_seconds));
+    setEl('round-longest', secs(s.longest_round_seconds));
+    setEl('round-kpr', fmt(s.avg_kills_per_round, 2));
+    setEl('round-early', pct(s.early_kill_pct, 1));
+    setEl('round-late', pct(s.late_kill_pct, 1));
+
+    const condBody = document.getElementById('roundWinConditionBody');
+    const condRows = d.win_conditions || [];
+    if (!condRows.length) {
+      condBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:1rem;">No win-condition data yet.</td></tr>';
+    } else {
+      condBody.innerHTML = condRows.map((row) => `<tr>
+        <td>${escHtml(row.win_condition || 'unknown')}</td>
+        <td class="num">${fmt(row.rounds)}</td>
+        <td class="num">${fmt(row.avg_round_seconds, 2)}</td>
+      </tr>`).join('');
+    }
+
+    const fkBody = document.getElementById('roundFkOutcomeBody');
+    const fkRows = d.first_kill_outcomes || [];
+    if (!fkRows.length) {
+      fkBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:1rem;">No first-kill outcome data yet.</td></tr>';
+    } else {
+      fkBody.innerHTML = fkRows.map((row) => `<tr>
+        <td>${escHtml(String(row.first_kill_side || 'unknown').toUpperCase())}</td>
+        <td class="num">${fmt(row.rounds)}</td>
+        <td class="num">${pct(row.conversion_rate, 1)}</td>
+      </tr>`).join('');
+    }
+  }).catch(()=>{});
+
+  // ── Match analytics ───────────────────────────────────────────────────────
+  statsFetch('/api/stats/match-analytics?limit=20').then(r=>r.json()).then(d => {
+    const s = d.summary || {};
+    setEl('match-avg-diff', fmt(s.avg_round_diff, 2));
+    setEl('match-close-rate', pct(s.close_match_rate, 1));
+    setEl('match-dom-rate', pct(s.dominant_match_rate, 1));
+    setEl('match-comeback-rate', pct(s.comeback_rate, 1));
+    setEl('match-momentum-index', pct(s.momentum_index, 1));
+    setEl('match-total', fmt(s.matches));
+
+    const scoreBody = document.getElementById('matchScoreDistBody');
+    const scoreRows = d.score_distribution || [];
+    if (!scoreRows.length) {
+      scoreBody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:var(--muted);padding:1rem;">No score distribution yet.</td></tr>';
+    } else {
+      scoreBody.innerHTML = scoreRows.map((row) => `<tr>
+        <td>${fmt(row.round_diff)}</td>
+        <td class="num">${fmt(row.matches)}</td>
+      </tr>`).join('');
+    }
+
+    const momentumBody = document.getElementById('matchMomentumBody');
+    const momentumRows = d.top_momentum_matches || [];
+    if (!momentumRows.length) {
+      momentumBody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1rem;">No momentum data yet.</td></tr>';
+    } else {
+      momentumBody.innerHTML = momentumRows.map((row) => `<tr>
+        <td>${fmtDate(row.played_at)}</td>
+        <td><a href="/replay/${encodeURIComponent(row.path)}" style="font-weight:600;color:var(--text);">${escHtml(row.map)}</a></td>
+        <td class="num"><span class="score-t1">${fmt(row.t1_rounds)}</span><span class="score-sep">–</span><span class="score-t2">${fmt(row.t2_rounds)}</span></td>
+        <td class="num">${fmt(row.max_streak)}</td>
+        <td class="num">${pct(row.momentum_score, 1)}</td>
+      </tr>`).join('');
+    }
+  }).catch(()=>{});
+
+  // ── Weapon effectiveness ──────────────────────────────────────────────────
+  statsFetch('/api/stats/weapon-analytics?limit=30').then(r=>r.json()).then(d => {
+    const s = d.summary || {};
+    setEl('wa-total-kills', fmt(s.total_enemy_kills));
+    setEl('wa-weapon-count', fmt(s.weapon_count));
+    setEl('wa-map-count', fmt(s.map_count));
+    setEl('wa-win-rate', pct(s.global_weapon_win_rate, 1));
+
+    const body = document.getElementById('weaponMapLeadersBody');
+    const rows = d.map_leaders || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:1rem;">No weapon-map analytics yet.</td></tr>';
+    } else {
+      body.innerHTML = rows.map((row) => `<tr>
+        <td><a href="/map/${encodeURIComponent(row.map)}" style="font-weight:600;color:var(--text);">${escHtml(row.map)}</a></td>
+        <td><a href="/weapon/${encodeURIComponent(row.weapon)}" style="font-weight:600;color:var(--text);">${escHtml(row.weapon)}</a></td>
+        <td class="num">${fmt(row.kills)}</td>
+        <td class="num">${pct(row.hs_pct, 1)}</td>
+        <td class="num">${pct(row.win_rate, 1)}</td>
+      </tr>`).join('');
+    }
+  }).catch(()=>{});
+
+  // ── AI meta insights ─────────────────────────────────────────────────────
+  statsFetch('/api/stats/insights?limit=8').then(r=>r.json()).then(d => {
+    const host = document.getElementById('aiInsights');
+    if (!host) return;
+    const rows = d.insights || [];
+    if (!rows.length) {
+      host.innerHTML = '<div style="color:var(--muted);font-size:.85rem;">No insights available for the selected filter.</div>';
+      return;
+    }
+    host.innerHTML = rows.map((item) => `
+      <div style="border:1px solid var(--border);border-radius:var(--radius);padding:.7rem .75rem;background:rgba(255,255,255,.02);">
+        <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:.3rem;">${escHtml(item.category || 'insight')}</div>
+        <div style="font-size:.88rem;font-weight:700;margin-bottom:.28rem;">${escHtml(item.title || 'Insight')}</div>
+        <div style="font-size:.8rem;color:var(--muted);line-height:1.35;">${escHtml(item.detail || '')}</div>
+        <div style="margin-top:.4rem;font-size:.72rem;color:var(--accent);">Confidence ${fmt(item.confidence)}%</div>
+      </div>
+    `).join('');
+  }).catch(() => {
+    const host = document.getElementById('aiInsights');
+    if (host) host.innerHTML = '<div style="color:var(--accent2);font-size:.85rem;">Failed to load insights.</div>';
+  });
+
+  // ── Activity chart ─────────────────────────────────────────────────────────
+  statsFetch('/api/stats/activity').then(r=>r.json()).then(data => {
+    const chart = document.getElementById('activityChart');
+    const legend = document.getElementById('activityLegend');
+    const weekFilter = document.getElementById('activityWeekFilter');
+    const weekFilterText = document.getElementById('activityWeekFilterText');
+    const weekFilterClear = document.getElementById('activityWeekFilterClear');
+    if (!data.length) {
+      chart.textContent = 'No activity data yet.';
+      if (_currentWeek && weekFilter && weekFilterText) {
+        weekFilter.style.display = 'flex';
+        weekFilterText.textContent = `Filtered to week ${_currentWeek}`;
+        if (weekFilterClear) {
+          weekFilterClear.addEventListener('click', function () {
+            reloadWithWeekFilter('');
+          });
+        }
+      }
+      return;
+    }
+    const maxM = Math.max(...data.map(d => d.matches), 1);
+    chart.innerHTML = data.map(d => {
+      const h = Math.max(4, Math.round(d.matches / maxM * 76));
+      const selectedClass = d.week === _currentWeek ? ' act-bar-active' : '';
+      return `<div class="act-bar${selectedClass}" data-week="${escHtml(d.week)}" style="height:${h}px;flex:1 0 auto;max-width:24px;"
+        title="${escHtml(d.week)}: ${d.matches} match${d.matches!==1?'es':''}"></div>`;
+    }).join('');
+    const total = data.reduce((s, d) => s + d.matches, 0);
+    legend.textContent = `${data[0].week} → ${data[data.length-1].week}  ·  ${total} matches total`;
+
+    chart.addEventListener('click', function (event) {
+      const bar = event.target && event.target.closest('.act-bar[data-week]');
+      if (!bar) return;
+      const week = String(bar.getAttribute('data-week') || '');
+      reloadWithWeekFilter(week === _currentWeek ? '' : week);
+    });
+
+    if (_currentWeek && weekFilter && weekFilterText) {
+      weekFilter.style.display = 'flex';
+      weekFilterText.textContent = `Filtered to week ${_currentWeek}`;
+      if (weekFilterClear) {
+        weekFilterClear.addEventListener('click', function () {
+          reloadWithWeekFilter('');
+        });
+      }
+    }
+  }).catch(()=>{});
+
+  // ── Leaderboard ────────────────────────────────────────────────────────────
+  let _lbData = [];
+  let _lbSort = { col: 'kills', dir: -1 };
+  let _lbPage = 0;
+  let _lbPageSize = 25;
+
+  function computeLocPcts(r) {
+    const t = (r.h_head||0) + (r.h_stomach||0) + (r.h_chest||0) + (r.h_legs||0);
+    r.head_pct  = t ? r.h_head    / t * 100 : null;
+    r.stom_pct  = t ? r.h_stomach / t * 100 : null;
+    r.chest_pct = t ? r.h_chest   / t * 100 : null;
+    r.legs_pct  = t ? r.h_legs    / t * 100 : null;
+  }
+
+  function _renderPager() {
+    const pager = document.getElementById('lbPager');
+    if (!pager) return;
+    const total = _lbData.length;
+    const pageSize = _lbPageSize === 0 ? total : _lbPageSize;
+    if (total === 0 || pageSize >= total) { pager.style.display = 'none'; return; }
+    const maxPage = Math.ceil(total / pageSize) - 1;
+    pager.style.display = 'flex';
+    document.getElementById('lbPrevBtn').disabled = _lbPage === 0;
+    document.getElementById('lbNextBtn').disabled = _lbPage >= maxPage;
+    const start = _lbPage * pageSize + 1;
+    const end = Math.min((_lbPage + 1) * pageSize, total);
+    document.getElementById('lbPageInfo').textContent = `${start}–${end} of ${total}`;
+  }
+
+  function renderLb() {
+    const { col, dir } = _lbSort;
+    _lbData.sort((a, b) => {
+      let av = a[col], bv = b[col];
+      if (av == null) av = -Infinity;
+      if (bv == null) bv = -Infinity;
+      return typeof av === 'string' ? dir*av.localeCompare(bv) : dir*(av-bv);
+    });
+    const tbody = document.getElementById('lbBody');
+    if (!_lbData.length) {
+      tbody.innerHTML = '<tr><td colspan="17" style="text-align:center;color:var(--muted);padding:1.5rem;">No data — try lowering the minimum games filter.</td></tr>';
+      _renderPager();
+      return;
+    }
+    const total = _lbData.length;
+    const pageSize = _lbPageSize === 0 ? total : _lbPageSize;
+    const maxPage = Math.ceil(total / pageSize) - 1;
+    if (_lbPage > maxPage) _lbPage = maxPage;
+    const start = _lbPage * pageSize;
+    const end = Math.min(start + pageSize, total);
+    tbody.innerHTML = _lbData.slice(start, end).map((r, i) => {
+      const rank = start + i + 1;
+      const kd   = r.deaths ? (r.kills/r.deaths).toFixed(2) : (r.kills||0).toFixed(2);
+      const avgK = r.games  ? (r.kills/r.games).toFixed(1)  : '—';
+      const p = (v, d) => v != null ? v.toFixed(d)+'%' : '—';
+      return `<tr>
+        <td class="num" style="color:var(--muted)">${rank}</td>
+        <td>${playerLink(r.name)}</td>
+        <td class="num">${r.games}</td>
+        <td class="num">${fmt(r.kills)}</td>
+        <td class="num">${fmt(r.deaths)}</td>
+        <td class="num" style="color:${parseFloat(kd)>=1?'var(--green)':'var(--accent2)'}">${kd}</td>
+        <td class="num">${avgK}</td>
+        <td class="num">${fmt(r.damage)}</td>
+        <td class="num">${fmt(r.hs_kills)}</td>
+        <td class="num">${r.avg_acc!=null ? parseFloat(r.avg_acc).toFixed(1)+'%' : '—'}</td>
+        <td class="num">${p(r.head_pct,1)}</td>
+        <td class="num">${p(r.stom_pct,1)}</td>
+        <td class="num">${p(r.chest_pct,1)}</td>
+        <td class="num">${p(r.legs_pct,1)}</td>
+        <td class="num">${r.awards_impressive != null ? fmt(r.awards_impressive) : '—'}</td>
+        <td class="num">${r.awards_accuracy   != null ? fmt(r.awards_accuracy)   : '—'}</td>
+        <td class="num">${r.awards_excellent   != null ? fmt(r.awards_excellent)  : '—'}</td>
+      </tr>`;
+    }).join('');
+    _renderPager();
+  }
+
+  function loadLeaderboard(minGames) {
+    document.getElementById('lbBody').innerHTML =
+      '<tr><td colspan="17" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>';
+    statsFetch('/api/stats/leaderboard?min_games=' + (minGames||1))
+      .then(r=>r.json())
+      .then(data => { _lbData = data; _lbData.forEach(computeLocPcts); _lbPage = 0; renderLb(); })
+      .catch(() => {
+        document.getElementById('lbBody').innerHTML =
+          '<tr><td colspan="17" style="text-align:center;color:var(--accent2);padding:1rem;">Failed to load.</td></tr>';
+      });
+  }
+
+  document.getElementById('lbTable').querySelector('thead').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    const col = th.dataset.sort;
+    _lbSort.col === col ? (_lbSort.dir *= -1) : (_lbSort.col=col, _lbSort.dir=col==='name'?1:-1);
+    document.querySelectorAll('#lbTable th[data-sort]').forEach(h => {
+      h.style.color = h.dataset.sort === col ? 'var(--text)' : '';
+    });
+    renderLb();
+  });
+  document.getElementById('minGames').addEventListener('change', function () {
+    loadLeaderboard(parseInt(this.value, 10));
+  });
+  document.getElementById('pageSize').addEventListener('change', function () {
+    _lbPageSize = parseInt(this.value, 10);
+    _lbPage = 0;
+    renderLb();
+  });
+  document.getElementById('lbPrevBtn').addEventListener('click', function () {
+    if (_lbPage > 0) { _lbPage--; renderLb(); }
+  });
+  document.getElementById('lbNextBtn').addEventListener('click', function () {
+    const total = _lbData.length;
+    const pageSize = _lbPageSize === 0 ? total : _lbPageSize;
+    if (_lbPage < Math.ceil(total / pageSize) - 1) { _lbPage++; renderLb(); }
+  });
+
+  // ── Recent matches ─────────────────────────────────────────────────────────
+  statsFetch('/api/stats/recent?limit=10').then(r=>r.json()).then(data => {
+    const tbody = document.getElementById('recentBody');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1rem;">No matches yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(r => {
+      const dur = r.duration ? Math.round(r.duration/60)+' min' : '—';
+      const score = (r.t1_rounds || r.t2_rounds)
+        ? `<span class="score-t1">${r.t1_rounds}</span><span class="score-sep">–</span><span class="score-t2">${r.t2_rounds}</span>`
+        : '—';
+      const mode = modeBadge(r.game_mode_detail, r.game_mode);
+      return `<tr>
+        <td>${fmtDate(r.played_at)}</td>
+        <td><a href="/replay/${encodeURIComponent(r.path)}"
+               style="font-weight:600;color:var(--text);">${escHtml(r.map)}</a>${mode}</td>
+        <td class="center">${score}</td>
+        <td class="num">${r.player_count||'—'}</td>
+        <td class="num">${fmt(r.total_kills)}</td>
+        <td class="num">${dur}</td>
+      </tr>`;
+    }).join('');
+  }).catch(()=>{});
+
+  // ── Weapon breakdown ───────────────────────────────────────────────────
+  let _wData = [];
+  let _wSort = { col: 'kills', dir: -1 };
+
+  function renderWeapons() {
+    const { col, dir } = _wSort;
+    const totalK = _wData.reduce((s, d) => s + (d.kills || 0), 0);
+    _wData.forEach(r => { r.kill_pct = totalK ? r.kills / totalK * 100 : null; });
+    _wData.sort((a, b) => {
+      let av = a[col], bv = b[col];
+      if (av == null) av = col === 'weapon' ? '' : -Infinity;
+      if (bv == null) bv = col === 'weapon' ? '' : -Infinity;
+      return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
+    });
+    const tbody = document.getElementById('weaponBody');
+    if (!_wData.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1rem;">No data yet.</td></tr>';
+      return;
+    }
+    const maxK  = Math.max(..._wData.map(d => d.kills), 1);
+    tbody.innerHTML = _wData.map(r => {
+      const barW    = Math.round((r.kills || 0) / maxK * 100);
+      const hsPct   = r.kills ? (r.hs / r.kills * 100).toFixed(1)+'%' : '—';
+      const killPct = r.kill_pct != null ? r.kill_pct.toFixed(1)+'%' : '—';
+      return `<tr>
+        <td><a href="/weapon/${encodeURIComponent(r.weapon)}" style="font-weight:600;color:var(--text);">${escHtml(r.weapon)}</a></td>
+        <td class="num">${fmt(r.kills)}</td>
+        <td class="num">${killPct}</td>
+        <td class="num">${fmt(r.hs)}</td>
+        <td class="num">${hsPct}</td>
+        <td><div class="bar-outer"><div class="bar-inner" style="width:${barW}%"></div></div></td>
+      </tr>`;
+    }).join('');
+  }
+
+  document.getElementById('weaponTable').querySelector('thead').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    const col = th.dataset.sort;
+    _wSort.col === col ? (_wSort.dir *= -1) : (_wSort.col = col, _wSort.dir = col === 'weapon' ? 1 : -1);
+    document.querySelectorAll('#weaponTable th[data-sort]').forEach(h => {
+      h.style.color = h.dataset.sort === col ? 'var(--text)' : '';
+    });
+    renderWeapons();
+  });
+
+  statsFetch('/api/stats/weapons').then(r=>r.json()).then(data => {
+    _wData = data;
+    renderWeapons();
+  }).catch(()=>{});
+
+  // ── Maps + win rates ──────────────────────────────────────────────────
+  let _mData     = [];
+  let _mWrMap    = {};
+  let _mSort     = { col: 'matches', dir: -1 };
+  let _mPage     = 0;
+  let _mPageSize = 25;
+
+  function _renderMapsPager() {
+    const pager = document.getElementById('mapsPager');
+    if (!pager) return;
+    const total = _mData.length;
+    const pageSize = _mPageSize === 0 ? total : _mPageSize;
+    if (total === 0 || pageSize >= total) { pager.style.display = 'none'; return; }
+    const maxPage = Math.ceil(total / pageSize) - 1;
+    pager.style.display = 'flex';
+    document.getElementById('mapsPrevBtn').disabled = _mPage === 0;
+    document.getElementById('mapsNextBtn').disabled = _mPage >= maxPage;
+    const start = _mPage * pageSize + 1;
+    const end = Math.min((_mPage + 1) * pageSize, total);
+    document.getElementById('mapsPageInfo').textContent = `${start}–${end} of ${total}`;
+  }
+
+  function renderMaps() {
+    const { col, dir } = _mSort;
+    _mData.sort((a, b) => {
+      const aw = _mWrMap[a.map] || {};
+      const bw = _mWrMap[b.map] || {};
+      let av = col in aw ? aw[col] : a[col];
+      let bv = col in bw ? bw[col] : b[col];
+      if (av == null) av = col === 'map' ? '' : -Infinity;
+      if (bv == null) bv = col === 'map' ? '' : -Infinity;
+      return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
+    });
+    const tbody = document.getElementById('mapsBody');
+    if (!_mData.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:1.5rem;">No map data yet.</td></tr>';
+      _renderMapsPager();
+      return;
+    }
+    const total = _mData.length;
+    const pageSize = _mPageSize === 0 ? total : _mPageSize;
+    const maxPage = Math.ceil(total / pageSize) - 1;
+    if (_mPage > maxPage) _mPage = maxPage;
+    const start = _mPage * pageSize;
+    const end = Math.min(start + pageSize, total);
+    tbody.innerHTML = _mData.slice(start, end).map(r => {
+      const wr = _mWrMap[r.map] || {};
+      return `<tr>
+        <td style="white-space:nowrap;"><img src="https://raw.githubusercontent.com/vrolse/AQ2-pickup-bot/main/thumbnails/${encodeURIComponent(r.map.toLowerCase())}.jpg" loading="lazy" width="64" height="40" data-map-thumb-modal="1" alt="Map thumbnail" style="border-radius:3px;object-fit:cover;vertical-align:middle;margin-right:.5rem;cursor:zoom-in;" onerror="this.style.display='none'"><a href="/map/${encodeURIComponent(r.map)}" style="font-weight:600;color:var(--text);">${escHtml(r.map)}</a></td>
+        <td class="num">${r.matches}</td>
+        <td class="num">${fmt(r.kills)}</td>
+        <td class="num">${r.avg_kills != null ? parseFloat(r.avg_kills).toFixed(1) : '—'}</td>
+        <td class="num">${fmt(r.players)}</td>
+        <td class="num">${r.avg_duration_min != null ? Math.round(r.avg_duration_min)+' min' : '—'}</td>
+        <td class="num" style="color:var(--t1)">${wr.t1_wins ?? '—'}</td>
+        <td class="num" style="color:var(--t2)">${wr.t2_wins ?? '—'}</td>
+        <td class="num" style="color:var(--muted)">${wr.draws ?? '—'}</td>
+      </tr>`;
+    }).join('');
+    _renderMapsPager();
+  }
+
+  document.getElementById('mapsTable').querySelector('thead').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    const col = th.dataset.sort;
+    _mSort.col === col ? (_mSort.dir *= -1) : (_mSort.col = col, _mSort.dir = col === 'map' ? 1 : -1);
+    document.querySelectorAll('#mapsTable th[data-sort]').forEach(h => {
+      h.style.color = h.dataset.sort === col ? 'var(--text)' : '';
+    });
+    _mPage = 0;
+    renderMaps();
+  });
+  document.getElementById('mapsPageSize').addEventListener('change', function () {
+    _mPageSize = parseInt(this.value, 10);
+    _mPage = 0;
+    renderMaps();
+  });
+  document.getElementById('mapsPrevBtn').addEventListener('click', function () {
+    if (_mPage > 0) { _mPage--; renderMaps(); }
+  });
+  document.getElementById('mapsNextBtn').addEventListener('click', function () {
+    const total = _mData.length;
+    const pageSize = _mPageSize === 0 ? total : _mPageSize;
+    if (_mPage < Math.ceil(total / pageSize) - 1) { _mPage++; renderMaps(); }
+  });
+
+  Promise.all([
+    statsFetch('/api/stats/maps').then(r=>r.json()),
+    statsFetch('/api/stats/map-win-rates').then(r=>r.json()),
+  ]).then(([maps, winRates]) => {
+    _mData = maps;
+    _mWrMap = {};
+    winRates.forEach(w => _mWrMap[w.map] = w);
+    renderMaps();
+  }).catch(()=>{});
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  loadLeaderboard(5);
+})();
+</script>
+{% endblock %}
+

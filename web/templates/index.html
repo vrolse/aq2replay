@@ -2,286 +2,1391 @@
 {% block title %}AQ2 Stats — Replays{% endblock %}
 
 {% block content %}
-<h1 style="font-size:1.5rem;margin-bottom:1rem;">Replays</h1>
+<style>
+  /* ── Live server status widget ──────────────────────────────── */
+  .srv-row {
+    display: flex;
+    gap: .6rem;
+    flex-wrap: wrap;
+    margin-bottom: .35rem;
+  }
+  .srv-card {
+    flex: 1 1 200px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: .7rem .9rem .75rem;
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    transition: border-color .15s, box-shadow .15s;
+    position: relative;
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+  }
+  .srv-card.is-online {
+    border-color: rgba(98,217,107,.3);
+    box-shadow: 0 2px 12px rgba(0,0,0,.35);
+  }
+  .srv-card.is-online:hover {
+    border-color: rgba(98,217,107,.6);
+    box-shadow: 0 4px 18px rgba(0,0,0,.5);
+  }
+  .srv-card.is-online::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: #62d96b;
+    border-radius: var(--radius) 0 0 var(--radius);
+  }
+  .srv-card__top {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+  }
+  .srv-dot {
+    width: .45rem; height: .45rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #3a3d4a;
+  }
+  .srv-card.is-online  .srv-dot { background: #62d96b; box-shadow: 0 0 5px #62d96b; animation: srvBlink 1.6s infinite; }
+  .srv-card.is-offline .srv-dot { background: #3a3d4a; }
+  .srv-card.is-probing .srv-dot { background: #e6c34d; box-shadow: 0 0 5px #e6c34d; }
+  @keyframes srvBlink { 50% { opacity: .35; } }
+  .srv-label {
+    font-size: .72rem;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .srv-card.is-online .srv-label { color: #62d96b; }
+  .srv-map {
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.15;
+  }
+  .srv-score-row {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin: .1rem 0 .05rem;
+  }
+  .srv-score-row .t1 {
+    font-size: 1.55rem;
+    font-weight: 900;
+    color: #e85d5d;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .srv-score-row .t2 {
+    font-size: 1.55rem;
+    font-weight: 900;
+    color: #5b8dee;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .srv-score-row .sep {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--muted);
+    line-height: 1;
+  }
+  .srv-score-row .rnd-label {
+    font-size: .65rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    align-self: flex-end;
+    margin-bottom: .18rem;
+  }
+  .srv-players {
+    font-size: .72rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .srv-offline-msg {
+    font-size: .8rem;
+    color: var(--muted);
+    margin-top: .1rem;
+  }
+  .srv-card.is-online::after {
+    content: '▶ Watch live';
+    font-size: .72rem;
+    font-weight: 700;
+    color: var(--accent);
+    margin-top: .15rem;
+  }
 
-<div style="display:grid;grid-template-columns:220px 1fr;gap:1rem;align-items:start">
+  /* ── Replay browser ─────────────────────────────────────────── */
+  .rb-root {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 1rem;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .rb-root { grid-template-columns: 1fr; }
+  }
 
-  <!-- ── Folder tree ───────────────────────────────────────────── -->
-  <div id="folderTree" style="background:var(--surface);border:1px solid var(--border);
-       border-radius:var(--radius);padding:.4rem;max-height:80vh;overflow-y:auto">
-    <div style="font-size:.75rem;color:var(--muted);padding:.25rem .5rem .4rem;
-         font-weight:600;text-transform:uppercase;letter-spacing:.06em">Folders</div>
-    <div id="folderList"><div style="color:var(--muted);font-size:.85rem;padding:.4rem .5rem">Loading…</div></div>
-  </div>
+  .rb-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .7rem;
+    margin-bottom: .75rem;
+    flex-wrap: wrap;
+  }
+  .rb-head h1 {
+    font-size: 1.5rem;
+    margin: 0;
+    color: var(--text);
+  }
+  .rb-head-count {
+    color: var(--muted);
+    font-size: .85rem;
+    white-space: nowrap;
+  }
 
-  <!-- ── File list ─────────────────────────────────────────────── -->
-  <div>
-    <!-- Breadcrumb -->
-    <div id="breadcrumb" style="display:flex;align-items:center;flex-wrap:wrap;gap:.15rem;
-         margin-bottom:.6rem;font-size:.85rem;min-height:1.4rem"></div>
+  /* Sidebar */
+  .rb-side {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: .5rem;
+    max-height: 78vh;
+    overflow-y: auto;
+    position: sticky;
+    top: .75rem;
+  }
+  .rb-side__title {
+    font-size: .72rem;
+    color: var(--muted);
+    padding: .25rem .55rem .45rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .rb-tree-row {
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .rb-tree-row:hover { background: rgba(255,255,255,.04); }
+  .rb-tree-row.is-active {
+    background: linear-gradient(90deg, rgba(91,141,238,.22), rgba(91,141,238,.05));
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .rb-tree-row.is-active .rb-tree-label { color: #fff; }
+  .rb-tree-arrow {
+    width: 1.1rem;
+    text-align: center;
+    font-size: .65rem;
+    color: var(--muted);
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .rb-tree-label {
+    flex: 1;
+    padding: .32rem .35rem .32rem .15rem;
+    font-size: .82rem;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rb-tree-count {
+    color: var(--muted);
+    font-size: .7rem;
+    margin-right: .4rem;
+    font-variant-numeric: tabular-nums;
+  }
 
-    <div style="display:flex;gap:.5rem;margin-bottom:.7rem;align-items:center">
-      <input id="searchInput" type="text" placeholder="Search replays…"
-        style="flex:1;padding:.45rem .75rem;background:var(--surface);border:1px solid var(--border);
-               border-radius:var(--radius);color:var(--text);font-size:.9rem;outline:none;
-               transition:border-color .15s"
-        oninput="onSearch(this.value)"
-        onfocus="this.style.borderColor='var(--accent)'"
-        onblur="this.style.borderColor='var(--border)'">
-      <span id="countLabel" style="color:var(--muted);font-size:.85rem;white-space:nowrap"></span>
+  /* Main area */
+  .rb-main {
+    min-width: 0;
+  }
+  .rb-toolbar {
+    display: flex;
+    gap: .6rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: .75rem;
+  }
+  .rb-search {
+    flex: 1 1 240px;
+    position: relative;
+    min-width: 220px;
+  }
+  .rb-search input {
+    width: 100%;
+    padding: .55rem .85rem .55rem 2.1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: .92rem;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .rb-search input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(91,141,238,.22);
+  }
+  .rb-search::before {
+    content: '🔍';
+    position: absolute;
+    left: .7rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: .8rem;
+    opacity: .6;
+    pointer-events: none;
+  }
+  .rb-search input::placeholder { color: var(--muted); }
+  .rb-sort, .rb-view {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: .82rem;
+    padding: .5rem .6rem;
+    outline: none;
+    cursor: pointer;
+  }
+  .rb-sort:hover, .rb-view:hover { border-color: var(--accent); }
+
+  .rb-chips {
+    display: flex;
+    gap: .4rem;
+    flex-wrap: wrap;
+    margin-bottom: .9rem;
+  }
+  .rb-chip {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    padding: .35rem .75rem;
+    border-radius: 999px;
+    font-size: .78rem;
+    cursor: pointer;
+    transition: all .15s;
+    user-select: none;
+  }
+  .rb-chip:hover { color: var(--text); border-color: rgba(91,141,238,.55); }
+  .rb-chip.is-active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .rb-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .15rem;
+    font-size: .84rem;
+    margin-bottom: .5rem;
+    min-height: 1.35rem;
+  }
+  .rb-breadcrumb span.sep { color: var(--muted); margin: 0 .2rem; }
+  .rb-breadcrumb a { color: var(--accent); cursor: pointer; }
+  .rb-breadcrumb a:hover { text-decoration: underline; }
+  .rb-breadcrumb .crumb-current { color: var(--text); font-weight: 600; }
+
+  .rb-view-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .rb-view-toggle button {
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    padding: .45rem .65rem;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    transition: all .15s;
+  }
+  .rb-view-toggle button.is-active {
+    background: var(--accent);
+    color: #fff;
+  }
+  .rb-view-toggle button:not(.is-active):hover { color: var(--text); }
+
+  /* Grid view */
+  .rb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: .85rem;
+  }
+  .rb-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+    transition: transform .15s, border-color .15s, box-shadow .15s;
+    position: relative;
+  }
+  .rb-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 22px rgba(0,0,0,.5);
+    text-decoration: none;
+  }
+  .rb-card__thumb {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #0b0e16 center/cover no-repeat;
+    overflow: hidden;
+  }
+  .rb-card__thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform .25s;
+  }
+  .rb-card:hover .rb-card__thumb img { transform: scale(1.04); }
+  .rb-card__thumb-fallback {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: .78rem;
+    background: linear-gradient(135deg, #1a1d27, #11131a);
+  }
+  .rb-card__overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to top,
+      rgba(0,0,0,.85) 0%,
+      rgba(0,0,0,.35) 35%,
+      rgba(0,0,0,0) 65%
+    );
+    pointer-events: none;
+  }
+  .rb-card__mode {
+    position: absolute;
+    top: .5rem;
+    left: .5rem;
+    font-size: .66rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: .18rem .48rem;
+    border-radius: 3px;
+    color: #fff;
+    background: rgba(0,0,0,.55);
+    border: 1px solid rgba(255,255,255,.15);
+  }
+  .rb-card__date {
+    position: absolute;
+    top: .5rem;
+    right: .5rem;
+    font-size: .7rem;
+    color: #fff;
+    background: rgba(0,0,0,.55);
+    padding: .18rem .48rem;
+    border-radius: 3px;
+    font-variant-numeric: tabular-nums;
+    border: 1px solid rgba(255,255,255,.1);
+  }
+  .rb-card__mapname {
+    position: absolute;
+    bottom: .5rem;
+    left: .6rem;
+    right: .6rem;
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.05rem;
+    line-height: 1.15;
+    text-shadow: 0 2px 6px rgba(0,0,0,.8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rb-card__watch {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(91,141,238,.25);
+    color: #fff;
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    opacity: 0;
+    transition: opacity .15s;
+    text-shadow: 0 2px 6px rgba(0,0,0,.8);
+  }
+  .rb-card:hover .rb-card__watch { opacity: 1; }
+  .rb-card__body {
+    padding: .55rem .7rem .7rem;
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    min-height: 0;
+  }
+  .rb-card__players {
+    font-size: .82rem;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rb-card__players .vs {
+    color: var(--muted);
+    font-size: .7rem;
+    margin: 0 .28rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .rb-card__players .tm1 { color: var(--t1); font-weight: 600; }
+  .rb-card__players .tm2 { color: var(--t2); font-weight: 600; }
+  .rb-card__meta {
+    font-size: .72rem;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rb-card__meta .dot { opacity: .5; }
+  .rb-card__subdir {
+    font-size: .68rem;
+    color: var(--muted);
+    margin-top: .12rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* List view */
+  .rb-list {
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+  }
+  .rb-row {
+    display: grid;
+    grid-template-columns: 80px 1fr auto;
+    align-items: center;
+    gap: .75rem;
+    padding: .5rem .75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    text-decoration: none;
+    color: inherit;
+    transition: border-color .15s, background .15s;
+  }
+  .rb-row:hover {
+    border-color: var(--accent);
+    background: rgba(91,141,238,.06);
+    text-decoration: none;
+  }
+  .rb-row__thumb {
+    width: 80px;
+    height: 48px;
+    border-radius: 4px;
+    object-fit: cover;
+    background: #0b0e16;
+  }
+  .rb-row__main { min-width: 0; display: flex; flex-direction: column; gap: .1rem; }
+  .rb-row__top {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    min-width: 0;
+  }
+  .rb-row__map {
+    font-weight: 700;
+    font-size: .95rem;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rb-row__mode {
+    font-size: .62rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    padding: .1rem .4rem;
+    border-radius: 3px;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .rb-row__meta {
+    font-size: .75rem;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rb-row__meta .tm1 { color: var(--t1); }
+  .rb-row__meta .tm2 { color: var(--t2); }
+  .rb-row__side {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    color: var(--muted);
+    font-size: .78rem;
+    white-space: nowrap;
+  }
+  .rb-row__side .watch {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: .85rem;
+  }
+
+  /* Pager */
+  .rb-pager {
+    display: flex;
+    gap: .35rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+  }
+  .rb-pager button {
+    padding: .4rem .75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    cursor: pointer;
+    font-size: .85rem;
+    transition: all .15s;
+  }
+  .rb-pager button:hover:not(:disabled):not(.is-current) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .rb-pager button.is-current {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    cursor: default;
+  }
+  .rb-pager button:disabled {
+    opacity: .45;
+    cursor: default;
+  }
+  .rb-pager .ellipsis {
+    color: var(--muted);
+    padding: 0 .35rem;
+    align-self: center;
+  }
+
+  .rb-empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--muted);
+    font-size: .9rem;
+    background: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+  }
+  .rb-empty-icon { font-size: 2.2rem; display: block; margin-bottom: .5rem; opacity: .6; }
+</style>
+
+<!-- ── Live Server Status Widget ──────────────────────────────────────────── -->
+<div id="serverStatus" style="margin-bottom:1.1rem;"></div>
+
+<div class="rb-head">
+  <h1>Replays</h1>
+  <span class="rb-head-count" id="rbCount">Loading…</span>
+</div>
+
+<div class="rb-root">
+  <!-- ── Sidebar: folders ─────────────────────────────── -->
+  <aside class="rb-side">
+    <div class="rb-side__title">Folders</div>
+    <div id="rbFolderList">
+      <div style="color:var(--muted);font-size:.82rem;padding:.4rem .5rem">Loading…</div>
     </div>
-    <div id="matchList" class="match-list"></div>
-    <div id="pagination" style="display:flex;gap:.4rem;margin-top:.8rem;flex-wrap:wrap"></div>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────── -->
+  <div class="rb-main">
+    <div class="rb-breadcrumb" id="rbBreadcrumb"></div>
+
+    <div class="rb-toolbar">
+      <div class="rb-search">
+        <input id="rbSearch" type="text" placeholder="Search by map, player, filename…" autocomplete="off">
+      </div>
+      <select id="rbSort" class="rb-sort" title="Sort order">
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="map_az">Map A → Z</option>
+        <option value="map_za">Map Z → A</option>
+        <option value="size_desc">Largest first</option>
+      </select>
+      <div class="rb-view-toggle" role="tablist">
+        <button id="rbViewGrid" class="is-active" title="Grid view" aria-label="Grid view">▦</button>
+        <button id="rbViewList" title="List view" aria-label="List view">≡</button>
+      </div>
+    </div>
+
+    <div class="rb-chips" id="rbChips">
+      <div class="rb-chip is-active" data-mode="">All modes</div>
+      <div class="rb-chip" data-mode="pickup">Pickup</div>
+      <div class="rb-chip" data-mode="finalstand">Finalstand</div>
+      <div class="rb-chip" data-mode="cw">Clanwar</div>
+      <div class="rb-chip" data-mode="chaos">Chaos</div>
+    </div>
+
+    <div id="rbResults" class="rb-grid"></div>
+    <div id="rbPager" class="rb-pager"></div>
   </div>
 </div>
 
 <script>
-/* ── state ──────────────────────────────────────────────────────── */
-let currentDir  = null;
-let currentQ    = '';
-let currentPage = 1;
-let searchTimer = null;
-let _tree       = {};        // nested tree built from flat dir list
-let _expanded   = new Set(); // which dir paths are open
+(function () {
+  'use strict';
 
-/* ── build tree from flat dir list ─────────────────────────────── */
-function buildTree(dirs) {
-  const root = {};
-  dirs.forEach(path => {
-    const parts = path.split('/');
-    let node = root;
-    parts.forEach(part => {
-      if (!node[part]) node[part] = {};
-      node = node[part];
+  // ── Config ───────────────────────────────────────────────────
+  const THUMB_BASE = 'https://raw.githubusercontent.com/vrolse/AQ2-pickup-bot/main/thumbnails/';
+  const PER_PAGE   = 60;
+
+  // Mode → badge color. Keeps style consistent with stats-lite.js mode badges.
+  const MODE_COLOR = {
+    pickup:     '#5b8dee',
+    finalstand: '#e85d5d',
+    cw:         '#9a7b2f',
+    chaos:      '#6b62d6',
+    tdm:        '#3f8cff',
+    ctf:        '#0aa58f',
+    dm:         '#666',
+    tourney:    '#9a7b2f',
+    legacy:     '#4a4f66',
+  };
+  const MODE_LABEL = {
+    pickup:     'PICKUP',
+    finalstand: 'FINALSTAND',
+    cw:         'CLANWAR',
+    chaos:      'CHAOS',
+    tdm:        'TDM',
+    ctf:        'CTF',
+    dm:         'DM',
+    tourney:    'TOURNEY',
+    legacy:     'CLASSIC',
+  };
+
+  // ── State ────────────────────────────────────────────────────
+  const state = {
+    tree: {},
+    dirCounts: {},
+    expanded: new Set(),
+    currentDir: null,
+    query: '',
+    mode: '',
+    sort: 'newest',
+    view: 'grid',
+    page: 1,
+    total: 0,
+    pages: 1,
+    items: [],
+    _allForDir: null,
+    _allCacheKey: '',
+  };
+
+  // ── Helpers ──────────────────────────────────────────────────
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function fmtSize(bytes) {
+    const n = Number(bytes || 0);
+    if (n <= 0) return '0 B';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+    return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function fmtDate(ymd) {
+    if (!ymd) return '';
+    // ymd already in YYYY-MM-DD form; rely on timezone-neutral parse
+    const [y, m, d] = ymd.split('-');
+    if (!y || !m || !d) return ymd;
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return MONTHS[Number(m) - 1] + ' ' + Number(d) + ', ' + y;
+  }
+
+  function fmtTime(hhmmss) {
+    if (!hhmmss) return '';
+    const s = String(hhmmss).padStart(6, '0');
+    if (s.length === 4) return s.slice(0, 2) + ':' + s.slice(2, 4);
+    return s.slice(0, 2) + ':' + s.slice(2, 4);
+  }
+
+  // ── Filename parsing ────────────────────────────────────────
+  //
+  // Modern:  {mode}_{YYYY-MM-DD}_{HHMMSS}_{p1}_{p2}_{map}_{port}.mvd2[.gz]
+  // Legacy:  {YYYY-MM-DD}_{HHMM}_{p1}_{p2}_{map}.mvd2[.gz]
+  //
+  // Returns { subdir, basename, mode, date, time, players[], map, port }
+  const KNOWN_MODES = new Set([
+    'pickup', 'finalstand', 'cw', 'chaos', 'tdm', 'ctf', 'dm', 'tourney', 'dom', 'esp', 'jumpmod', 'tp',
+  ]);
+
+  function parseFilename(path) {
+    const parts = String(path || '').split('/');
+    const basename = parts[parts.length - 1] || '';
+    const subdir = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+
+    let stem = basename.replace(/\.mvd2(\.gz)?$/i, '');
+    const tokens = stem.split('_').filter(Boolean);
+
+    const out = {
+      subdir: subdir,
+      basename: basename,
+      mode: null,
+      date: null,
+      time: null,
+      players: [],
+      team1: null,
+      team2: null,
+      map: null,
+      port: null,
+    };
+    let rest = tokens.slice();
+
+    // Mode prefix (modern)
+    if (rest.length && KNOWN_MODES.has(rest[0].toLowerCase())) {
+      out.mode = rest.shift().toLowerCase();
+    } else {
+      out.mode = 'legacy';
+    }
+
+    // YYYY-MM-DD
+    if (rest.length && /^\d{4}-\d{2}-\d{2}$/.test(rest[0])) {
+      out.date = rest.shift();
+    }
+    // HHMMSS or HHMM
+    if (rest.length && /^\d{4,6}$/.test(rest[0]) && rest[0].length <= 6 && !/^\d{5}$/.test(rest[0])) {
+      // Disambiguate from a port — ports are typically 5 digits starting with 2 (27xxx).
+      // Time is 4 or 6 digits.
+      if (rest[0].length === 4 || rest[0].length === 6) {
+        out.time = rest.shift();
+      }
+    }
+
+    // Trailing port (only a 5-digit number, e.g. 27930, 27950)
+    if (rest.length && /^\d{5}$/.test(rest[rest.length - 1])) {
+      out.port = rest.pop();
+    }
+
+    // Map is the last remaining token
+    if (rest.length) {
+      out.map = rest.pop();
+    }
+
+    // Remainder: players / teams
+    const teamLike = rest.filter(function (t) { return /^team[12]$/i.test(t); });
+    if (teamLike.length >= 2) {
+      // Pickup / finalstand: Team1_Team2 markers → show as "Team 1 vs Team 2"
+      out.team1 = 'Team 1';
+      out.team2 = 'Team 2';
+      out.players = [];
+    } else {
+      // Strip lone Team1/Team2 markers so chaos filenames show just the real names
+      const realPlayers = rest.filter(function (t) { return !/^team[12]$/i.test(t); });
+      out.players = realPlayers;
+      if (realPlayers.length >= 2) {
+        out.team1 = realPlayers[0];
+        out.team2 = realPlayers[realPlayers.length - 1];
+      }
+    }
+
+    return out;
+  }
+
+  // ── Tree build / render ──────────────────────────────────────
+  function buildTree(dirs) {
+    const root = {};
+    dirs.forEach(function (path) {
+      const parts = path.split('/');
+      let node = root;
+      parts.forEach(function (part) {
+        if (!node[part]) node[part] = {};
+        node = node[part];
+      });
     });
-  });
-  return root;
-}
+    return root;
+  }
 
-/* ── render tree ────────────────────────────────────────────────── */
-function renderTree(node, parentPath, container) {
-  Object.keys(node).sort().forEach(name => {
-    const path     = parentPath ? parentPath + '/' + name : name;
-    const children = node[name];
-    const hasKids  = Object.keys(children).length > 0;
+  function renderFolderTree() {
+    const container = document.getElementById('rbFolderList');
+    container.innerHTML = '';
 
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;border-radius:4px;';
-    row.dataset.dir   = path;
+    // "All" row
+    const allRow = document.createElement('div');
+    allRow.className = 'rb-tree-row' + (state.currentDir === null ? ' is-active' : '');
+    allRow.innerHTML = '<span class="rb-tree-arrow"></span>' +
+      '<span class="rb-tree-label">🗂 All replays</span>';
+    allRow.addEventListener('click', function () { selectFolder(null); });
+    container.appendChild(allRow);
 
-    // Toggle arrow (only if has children)
-    const arrow = document.createElement('span');
-    arrow.style.cssText =
-      'width:1.2rem;text-align:center;cursor:pointer;flex-shrink:0;font-size:.7rem;color:var(--muted)';
-    arrow.textContent = hasKids ? (_expanded.has(path) ? '▼' : '▶') : '';
-    if (hasKids) {
-      arrow.addEventListener('click', e => {
-        e.stopPropagation();
-        if (_expanded.has(path)) _expanded.delete(path); else _expanded.add(path);
-        refreshTree();
+    function renderNode(node, parentPath, parentEl, depth) {
+      Object.keys(node).sort().forEach(function (name) {
+        const path = parentPath ? parentPath + '/' + name : name;
+        const children = node[name];
+        const hasKids = Object.keys(children).length > 0;
+
+        const row = document.createElement('div');
+        row.className = 'rb-tree-row' + (state.currentDir === path ? ' is-active' : '');
+        row.style.paddingLeft = (depth * .75) + 'rem';
+
+        const arrow = document.createElement('span');
+        arrow.className = 'rb-tree-arrow';
+        arrow.textContent = hasKids ? (state.expanded.has(path) ? '▼' : '▶') : '';
+        if (hasKids) {
+          arrow.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (state.expanded.has(path)) state.expanded.delete(path);
+            else state.expanded.add(path);
+            renderFolderTree();
+          });
+        }
+
+        const label = document.createElement('span');
+        label.className = 'rb-tree-label';
+        label.textContent = '📁 ' + name;
+        label.title = path;
+        label.addEventListener('click', function () { selectFolder(path); });
+
+        row.appendChild(arrow);
+        row.appendChild(label);
+        parentEl.appendChild(row);
+
+        if (hasKids && state.expanded.has(path)) {
+          renderNode(children, path, parentEl, depth + 1);
+        }
       });
     }
 
-    // Label
-    const label = document.createElement('span');
-    label.textContent = '📁 ' + name;
-    label.title       = path;
-    label.style.cssText =
-      'flex:1;padding:.28rem .4rem .28rem .1rem;cursor:pointer;font-size:.84rem;' +
-      'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
-      (currentDir === path ? 'color:#fff' : 'color:var(--text)');
-    label.addEventListener('click', () => selectFolder(path));
+    renderNode(state.tree, '', container, 0);
+  }
 
-    row.style.background = currentDir === path ? 'var(--accent)' : '';
+  // ── Breadcrumb ───────────────────────────────────────────────
+  function renderBreadcrumb() {
+    const bc = document.getElementById('rbBreadcrumb');
+    bc.innerHTML = '';
 
-    row.addEventListener('mouseenter', () => {
-      if (currentDir !== path) row.style.background = 'rgba(255,255,255,.05)';
-    });
-    row.addEventListener('mouseleave', () => {
-      if (currentDir !== path) row.style.background = '';
-    });
-
-    row.appendChild(arrow);
-    row.appendChild(label);
-    container.appendChild(row);
-
-    // Recurse into children if expanded
-    if (hasKids && _expanded.has(path)) {
-      const sub = document.createElement('div');
-      sub.style.paddingLeft = '.9rem';
-      renderTree(children, path, sub);
-      container.appendChild(sub);
+    function crumb(label, dir, isCurrent) {
+      const el = document.createElement(isCurrent ? 'span' : 'a');
+      el.textContent = label;
+      if (isCurrent) el.className = 'crumb-current';
+      else el.addEventListener('click', function () { selectFolder(dir); });
+      return el;
     }
-  });
-}
+    function sep() {
+      const s = document.createElement('span');
+      s.className = 'sep';
+      s.textContent = '›';
+      return s;
+    }
 
-async function loadDirs() {
-  const res  = await fetch('/api/dirs');
-  const dirs = await res.json();
-  _tree = buildTree(dirs);
-  refreshTree();
-  selectFolder(null);
-}
+    bc.appendChild(crumb('All', null, state.currentDir === null));
+    if (state.currentDir) {
+      const parts = state.currentDir.split('/');
+      parts.forEach(function (part, i) {
+        bc.appendChild(sep());
+        const fullPath = parts.slice(0, i + 1).join('/');
+        const isLast = i === parts.length - 1;
+        bc.appendChild(crumb(part, isLast ? null : fullPath, isLast));
+      });
+    }
+  }
 
-function refreshTree() {
-  const container = document.getElementById('folderList');
-  container.innerHTML = '';
+  // ── Data loading ─────────────────────────────────────────────
+  async function loadDirs() {
+    try {
+      const res = await fetch('/api/dirs');
+      const dirs = await res.json();
+      state.tree = buildTree(dirs || []);
+      renderFolderTree();
+    } catch (_e) {
+      document.getElementById('rbFolderList').innerHTML =
+        '<div style="color:var(--muted);font-size:.82rem;padding:.4rem .5rem">No folders.</div>';
+    }
+  }
 
-  // "All" row
-  const allRow = document.createElement('div');
-  allRow.style.cssText =
-    'display:flex;align-items:center;border-radius:4px;cursor:pointer;' +
-    'padding:.28rem .5rem;font-size:.84rem;' +
-    (currentDir === null ? 'background:var(--accent);color:#fff' : 'color:var(--text)');
-  allRow.textContent = '🗂 All replays';
-  allRow.addEventListener('click', () => selectFolder(null));
-  allRow.addEventListener('mouseenter', () => {
-    if (currentDir !== null) allRow.style.background = 'rgba(255,255,255,.05)';
-  });
-  allRow.addEventListener('mouseleave', () => {
-    if (currentDir !== null) allRow.style.background = currentDir === null ? 'var(--accent)' : '';
-  });
-  container.appendChild(allRow);
+  // Fetch all items for the current (dir, query) combo and handle mode/sort
+  // client-side. We pull a generous batch up-front so mode filtering and sort
+  // work across the whole filtered set rather than only the visible page.
+  async function loadItems() {
+    const cacheKey = JSON.stringify({ dir: state.currentDir, query: state.query });
+    if (state._allCacheKey !== cacheKey) {
+      state._allForDir = null;
+      state._allCacheKey = cacheKey;
+    }
 
-  renderTree(_tree, '', container);
-}
+    if (!state._allForDir) {
+      setResultsLoading();
+      // Pull the entire filtered list in one request — the backend now serves
+      // from an in-memory cache so this is effectively free, and it lets the
+      // client-side mode filter / sort / pager operate over the whole set
+      // (otherwise rare modes would show 0 results when the top N are dominated
+      // by another mode).
+      const params = new URLSearchParams({ page: '1', per_page: '100000' });
+      if (state.currentDir) params.set('dir', state.currentDir);
+      if (state.query) params.set('q', state.query);
 
-/* ── breadcrumb ─────────────────────────────────────────────────── */
-function renderBreadcrumb() {
-  const bc = document.getElementById('breadcrumb');
-  bc.innerHTML = '';
+      try {
+        const res = await fetch('/api/replays?' + params);
+        const data = await res.json();
+        const items = (data.items || []).map(function (r) {
+          const parsed = parseFilename(r.filename);
+          return {
+            filename: r.filename,
+            size: r.size,
+            mtime: r.mtime,
+            parsed: parsed,
+          };
+        });
 
-  const sep = () => {
-    const s = document.createElement('span');
-    s.textContent = '/';
-    s.style.color = 'var(--muted)';
-    return s;
-  };
+        state._allForDir = items;
+        state.total = data.total || items.length;
+      } catch (_e) {
+        state._allForDir = [];
+        state.total = 0;
+      }
+    }
 
-  const crumb = (label, dir) => {
-    const s = document.createElement('span');
-    s.textContent = label;
-    s.style.cssText = dir !== '§current§'
-      ? 'color:var(--accent);cursor:pointer'
-      : 'color:var(--text)';
-    if (dir !== '§current§') s.addEventListener('click', () => selectFolder(dir));
-    return s;
-  };
+    renderResults();
+  }
 
-  bc.appendChild(crumb('All', null));
+  // ── Result rendering ─────────────────────────────────────────
+  function applyFilters(items) {
+    let out = items.slice();
+    if (state.mode) {
+      out = out.filter(function (it) { return it.parsed.mode === state.mode; });
+    }
+    return out;
+  }
 
-  if (currentDir) {
-    const parts = currentDir.split('/');
-    parts.forEach((part, i) => {
-      bc.appendChild(sep());
-      const fullPath = parts.slice(0, i + 1).join('/');
-      const isCurrent = i === parts.length - 1;
-      bc.appendChild(crumb(part, isCurrent ? '§current§' : fullPath));
+  function applySort(items) {
+    const list = items.slice();
+    switch (state.sort) {
+      case 'oldest':
+        list.sort(function (a, b) {
+          return ((a.parsed.date || '') + (a.parsed.time || ''))
+            .localeCompare((b.parsed.date || '') + (b.parsed.time || ''))
+            || (a.mtime - b.mtime);
+        });
+        break;
+      case 'map_az':
+        list.sort(function (a, b) {
+          return String(a.parsed.map || '').localeCompare(String(b.parsed.map || ''));
+        });
+        break;
+      case 'map_za':
+        list.sort(function (a, b) {
+          return String(b.parsed.map || '').localeCompare(String(a.parsed.map || ''));
+        });
+        break;
+      case 'size_desc':
+        list.sort(function (a, b) { return (b.size || 0) - (a.size || 0); });
+        break;
+      case 'newest':
+      default:
+        list.sort(function (a, b) {
+          const ak = (a.parsed.date || '') + (a.parsed.time || '');
+          const bk = (b.parsed.date || '') + (b.parsed.time || '');
+          const cmp = bk.localeCompare(ak);
+          return cmp || (b.mtime - a.mtime);
+        });
+        break;
+    }
+    return list;
+  }
+
+  function setResultsLoading() {
+    document.getElementById('rbCount').textContent = 'Loading…';
+    document.getElementById('rbResults').innerHTML =
+      '<div class="rb-empty">Loading replays…</div>';
+    document.getElementById('rbPager').innerHTML = '';
+  }
+
+  function renderResults() {
+    const results = document.getElementById('rbResults');
+    const count   = document.getElementById('rbCount');
+    const pagerEl = document.getElementById('rbPager');
+
+    const all = state._allForDir || [];
+    const filtered = applyFilters(all);
+    const sorted   = applySort(filtered);
+
+    state.pages = Math.max(1, Math.ceil(sorted.length / PER_PAGE));
+    if (state.page > state.pages) state.page = state.pages;
+    const start = (state.page - 1) * PER_PAGE;
+    const end   = Math.min(start + PER_PAGE, sorted.length);
+    const pageItems = sorted.slice(start, end);
+
+    // Count label
+    const filteredCount = sorted.length;
+    const totalNote = (state.mode && filteredCount !== state.total)
+      ? (' of ' + state.total.toLocaleString())
+      : '';
+    if (!filteredCount) {
+      count.textContent = state.total ? '0 matching' : 'No replays';
+    } else if (filteredCount === 1) {
+      count.textContent = '1 replay' + totalNote;
+    } else {
+      count.textContent = filteredCount.toLocaleString() + ' replays' + totalNote;
+    }
+
+    if (!pageItems.length) {
+      results.className = 'rb-empty-wrap';
+      results.innerHTML =
+        '<div class="rb-empty">' +
+          '<span class="rb-empty-icon">🗂</span>' +
+          (state.total
+            ? 'No replays match the current filters. Try clearing search or selecting a different mode.'
+            : 'No replays found in this folder.') +
+        '</div>';
+      pagerEl.innerHTML = '';
+      return;
+    }
+
+    results.className = state.view === 'grid' ? 'rb-grid' : 'rb-list';
+    results.innerHTML = pageItems.map(function (it) {
+      return state.view === 'grid' ? renderCard(it) : renderRow(it);
+    }).join('');
+
+    // Wire up thumbnail fallbacks: on error, show the fallback node.
+    results.querySelectorAll('img[data-thumb]').forEach(function (img) {
+      img.addEventListener('error', function () {
+        const fb = this.parentElement.querySelector('.rb-card__thumb-fallback');
+        if (fb) fb.style.display = 'flex';
+        this.style.display = 'none';
+      });
+    });
+
+    renderPager();
+  }
+
+  function renderCard(it) {
+    const p = it.parsed;
+    const map = p.map || 'unknown';
+    const mode = p.mode || 'legacy';
+    const modeColor = MODE_COLOR[mode] || '#555';
+    const modeLabel = MODE_LABEL[mode] || mode.toUpperCase();
+    const href = '/replay/' + encodeURI(it.filename);
+    const thumb = THUMB_BASE + encodeURIComponent(map.toLowerCase()) + '.jpg';
+
+    let playersHtml = '';
+    if (p.team1 && p.team2) {
+      playersHtml =
+        '<span class="tm1">' + escHtml(p.team1) + '</span>' +
+        '<span class="vs">vs</span>' +
+        '<span class="tm2">' + escHtml(p.team2) + '</span>';
+    } else if (p.players && p.players.length) {
+      playersHtml = '<span>' + p.players.map(escHtml).join(', ') + '</span>';
+    } else {
+      playersHtml = '<span style="color:var(--muted)">—</span>';
+    }
+
+    const dateLabel = p.date ? fmtDate(p.date) : '';
+    const timeLabel = p.time ? fmtTime(p.time) : '';
+
+    const metaBits = [];
+    if (dateLabel) metaBits.push(escHtml(dateLabel));
+    if (timeLabel) metaBits.push(escHtml(timeLabel));
+    metaBits.push(fmtSize(it.size));
+
+    const subdirHtml = p.subdir
+      ? '<div class="rb-card__subdir" title="' + escHtml(p.subdir) + '">📁 ' + escHtml(p.subdir) + '</div>'
+      : '';
+
+    return '' +
+      '<a class="rb-card" href="' + href + '" title="' + escHtml(it.filename) + '">' +
+        '<div class="rb-card__thumb">' +
+          '<img data-thumb loading="lazy" src="' + thumb + '" alt="">' +
+          '<div class="rb-card__thumb-fallback" style="display:none">no preview</div>' +
+          '<div class="rb-card__overlay"></div>' +
+          '<div class="rb-card__mode" style="background:' + modeColor + ';border-color:transparent;">' + modeLabel + '</div>' +
+          (dateLabel ? '<div class="rb-card__date">' + escHtml(dateLabel) + '</div>' : '') +
+          '<div class="rb-card__mapname">' + escHtml(map) + '</div>' +
+          '<div class="rb-card__watch">▶ Watch</div>' +
+        '</div>' +
+        '<div class="rb-card__body">' +
+          '<div class="rb-card__players">' + playersHtml + '</div>' +
+          '<div class="rb-card__meta">' +
+            metaBits.map(function (b, i) {
+              return (i > 0 ? '<span class="dot">•</span>' : '') + b;
+            }).join('') +
+          '</div>' +
+          subdirHtml +
+        '</div>' +
+      '</a>';
+  }
+
+  function renderRow(it) {
+    const p = it.parsed;
+    const map = p.map || 'unknown';
+    const mode = p.mode || 'legacy';
+    const modeColor = MODE_COLOR[mode] || '#555';
+    const modeLabel = MODE_LABEL[mode] || mode.toUpperCase();
+    const href = '/replay/' + encodeURI(it.filename);
+    const thumb = THUMB_BASE + encodeURIComponent(map.toLowerCase()) + '.jpg';
+
+    let playersHtml = '';
+    if (p.team1 && p.team2) {
+      playersHtml = '<span class="tm1">' + escHtml(p.team1) + '</span> vs ' +
+                    '<span class="tm2">' + escHtml(p.team2) + '</span>';
+    } else if (p.players && p.players.length) {
+      playersHtml = p.players.map(escHtml).join(', ');
+    }
+
+    const dateLabel = p.date ? fmtDate(p.date) : '';
+    const subdirLabel = p.subdir ? ' • 📁 ' + p.subdir : '';
+    const metaLine = [dateLabel, playersHtml].filter(Boolean).join(' • ') + subdirLabel;
+
+    return '' +
+      '<a class="rb-row" href="' + href + '" title="' + escHtml(it.filename) + '">' +
+        '<img class="rb-row__thumb" loading="lazy" src="' + thumb + '" alt="" ' +
+             'onerror="this.style.visibility=\'hidden\'">' +
+        '<div class="rb-row__main">' +
+          '<div class="rb-row__top">' +
+            '<span class="rb-row__mode" style="background:' + modeColor + ';">' + modeLabel + '</span>' +
+            '<span class="rb-row__map">' + escHtml(map) + '</span>' +
+          '</div>' +
+          '<div class="rb-row__meta">' + metaLine + '</div>' +
+        '</div>' +
+        '<div class="rb-row__side">' +
+          '<span>' + fmtSize(it.size) + '</span>' +
+          '<span class="watch">▶ Watch</span>' +
+        '</div>' +
+      '</a>';
+  }
+
+  function renderPager() {
+    const pagerEl = document.getElementById('rbPager');
+    if (state.pages <= 1) { pagerEl.innerHTML = ''; return; }
+
+    const btns = [];
+    function add(label, page, opts) {
+      opts = opts || {};
+      if (opts.ellipsis) {
+        btns.push('<span class="ellipsis">…</span>');
+        return;
+      }
+      const disabled = opts.disabled ? ' disabled' : '';
+      const current  = opts.current  ? ' class="is-current"' : '';
+      btns.push('<button type="button"' + current + disabled + ' data-page="' + page + '">' + label + '</button>');
+    }
+
+    add('‹ Prev', state.page - 1, { disabled: state.page <= 1 });
+
+    const windowSize = 2;
+    const start = Math.max(1, state.page - windowSize);
+    const end   = Math.min(state.pages, state.page + windowSize);
+    if (start > 1) {
+      add('1', 1, {});
+      if (start > 2) add('', 0, { ellipsis: true });
+    }
+    for (let i = start; i <= end; i++) {
+      add(String(i), i, { current: i === state.page });
+    }
+    if (end < state.pages) {
+      if (end < state.pages - 1) add('', 0, { ellipsis: true });
+      add(String(state.pages), state.pages, {});
+    }
+
+    add('Next ›', state.page + 1, { disabled: state.page >= state.pages });
+
+    pagerEl.innerHTML = btns.join('');
+    pagerEl.querySelectorAll('button[data-page]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const target = parseInt(this.dataset.page, 10);
+        if (!isFinite(target) || target < 1 || target > state.pages || target === state.page) return;
+        state.page = target;
+        renderResults();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
     });
   }
-}
 
-/* ── select folder ──────────────────────────────────────────────── */
-function selectFolder(dir) {
-  currentDir  = dir;
-  currentPage = 1;
-  // Auto-expand ancestors
-  if (dir) {
-    const parts = dir.split('/');
-    for (let i = 1; i <= parts.length; i++) _expanded.add(parts.slice(0, i).join('/'));
+  // ── Actions ──────────────────────────────────────────────────
+  function selectFolder(dir) {
+    state.currentDir = dir;
+    state.page = 1;
+    state._allForDir = null;
+    if (dir) {
+      const parts = dir.split('/');
+      for (let i = 1; i <= parts.length; i++) {
+        state.expanded.add(parts.slice(0, i).join('/'));
+      }
+    }
+    renderFolderTree();
+    renderBreadcrumb();
+    loadItems();
   }
-  refreshTree();
+
+  function setMode(mode) {
+    state.mode = mode || '';
+    state.page = 1;
+    document.querySelectorAll('#rbChips .rb-chip').forEach(function (c) {
+      c.classList.toggle('is-active', (c.dataset.mode || '') === state.mode);
+    });
+    renderResults();
+  }
+
+  function setView(view) {
+    state.view = view;
+    document.getElementById('rbViewGrid').classList.toggle('is-active', view === 'grid');
+    document.getElementById('rbViewList').classList.toggle('is-active', view === 'list');
+    renderResults();
+  }
+
+  // ── Wire events ──────────────────────────────────────────────
+  document.getElementById('rbChips').addEventListener('click', function (e) {
+    const chip = e.target.closest('.rb-chip');
+    if (!chip) return;
+    setMode(chip.dataset.mode || '');
+  });
+
+  document.getElementById('rbSort').addEventListener('change', function () {
+    state.sort = this.value;
+    state.page = 1;
+    renderResults();
+  });
+
+  document.getElementById('rbViewGrid').addEventListener('click', function () { setView('grid'); });
+  document.getElementById('rbViewList').addEventListener('click', function () { setView('list'); });
+
+  let searchTimer = null;
+  document.getElementById('rbSearch').addEventListener('input', function () {
+    clearTimeout(searchTimer);
+    const val = this.value.trim();
+    searchTimer = setTimeout(function () {
+      state.query = val.toLowerCase();
+      state.page = 1;
+      state._allForDir = null;
+      loadItems();
+    }, 280);
+  });
+
+  // ── Boot ─────────────────────────────────────────────────────
   renderBreadcrumb();
-  loadReplays();
-}
+  loadDirs();
+  loadItems();
+})();
 
-/* ── replay list ────────────────────────────────────────────────── */
-async function loadReplays() {
-  const params = new URLSearchParams({ page: currentPage, per_page: 100 });
-  if (currentDir) params.set('dir', currentDir);
-  if (currentQ)   params.set('q',   currentQ);
+// ── Live Server Status Widget ────────────────────────────────────────────────
+(function () {
+  'use strict';
 
-  document.getElementById('matchList').innerHTML =
-    '<div style="color:var(--muted);padding:.5rem .2rem;font-size:.9rem">Loading…</div>';
+  var container = document.getElementById('serverStatus');
+  var refreshTimer = null;
 
-  const res  = await fetch('/api/replays?' + params);
-  const data = await res.json();
-
-  const label = document.getElementById('countLabel');
-  label.textContent = data.total === 0  ? 'No replays'
-                    : data.total === 1  ? '1 replay'
-                    : data.total.toLocaleString() + ' replays';
-
-  const list = document.getElementById('matchList');
-  list.innerHTML = '';
-
-  if (!data.items.length) {
-    list.innerHTML = '<p style="color:var(--muted)">No replays match.</p>';
-  } else {
-    data.items.forEach(r => {
-      const parts    = r.filename.split('/');
-      const basename = parts[parts.length - 1];
-      const subdir   = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
-      const sizeMB   = (r.size / 1024 / 1024).toFixed(1);
-
-      const a = document.createElement('a');
-      a.className = 'match-item';
-      a.href      = '/replay/' + r.filename;
-      a.style.cssText = 'text-decoration:none;color:inherit';
-      a.innerHTML =
-        `<div style="grid-column:1/3">` +
-          `<div class="match-map">` +
-            (subdir ? `<span style="color:var(--muted);font-size:.78rem;margin-right:.35rem">📁 ${subdir}/</span>` : '') +
-            basename +
-          `</div>` +
-          `<div class="match-meta">${sizeMB} MB</div>` +
-        `</div>` +
-        `<div class="match-score" style="font-size:.9rem;color:var(--muted)">▶</div>`;
-      list.appendChild(a);
-    });
+  function escH(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  renderPagination(data.page, data.pages);
-}
+  function renderServers(servers) {
+    if (!servers || !servers.length) { container.innerHTML = ''; return; }
 
-/* ── pagination ─────────────────────────────────────────────────── */
-function renderPagination(page, pages) {
-  const el = document.getElementById('pagination');
-  el.innerHTML = '';
-  if (pages <= 1) return;
+    var cards = servers.map(function (s) {
+      var isOnline  = s.status === 'online';
+      var isProbing = s.status === 'probing';
+      var stateClass = isOnline ? 'is-online' : isProbing ? 'is-probing' : 'is-offline';
+      var statusText = isOnline ? '● LIVE' : isProbing ? 'checking…' : 'offline';
+      var label = escH(s.label || (':' + s.port));
+      var watchUrl = '/live?host=' + encodeURIComponent(s.host || '') +
+                     '&port=' + encodeURIComponent(s.port) + '&autoconnect=1';
 
-  const mkBtn = (label, p, disabled) => {
-    const b = document.createElement('button');
-    b.textContent = label;
-    b.disabled    = disabled;
-    b.style.cssText =
-      `padding:.3rem .7rem;background:${p === page ? 'var(--accent)' : 'var(--surface)'};` +
-      `border:1px solid var(--border);border-radius:4px;color:var(--text);` +
-      `cursor:${disabled ? 'default' : 'pointer'};font-size:.85rem`;
-    if (!disabled) b.addEventListener('click', () => {
-      currentPage = p; loadReplays(); window.scrollTo(0, 0);
+      var inner = '<div class="srv-card__top">' +
+        '<span class="srv-dot"></span>' +
+        '<span class="srv-label">' + (isOnline ? statusText : label) + '</span>' +
+        (!isOnline ? '' : '<span style="font-size:.68rem;color:var(--muted);margin-left:auto;">' + escH(label) + '</span>') +
+        '</div>';
+
+      if (isOnline) {
+        if (s.map) inner += '<div class="srv-map">' + escH(s.map) + '</div>';
+
+        var rw = s.round_wins || {};
+        var t1 = rw['1'] != null ? rw['1'] : (rw[1] != null ? rw[1] : null);
+        var t2 = rw['2'] != null ? rw['2'] : (rw[2] != null ? rw[2] : null);
+        if (t1 != null || t2 != null) {
+          inner += '<div class="srv-score-row">' +
+            '<span class="t1">' + (t1 != null ? t1 : '–') + '</span>' +
+            '<span class="sep">:</span>' +
+            '<span class="t2">' + (t2 != null ? t2 : '–') + '</span>' +
+            '<span class="rnd-label">rounds</span>' +
+            '</div>';
+        }
+
+        if (s.player_count) {
+          var names = (s.player_names || []).slice(0, 8).map(escH).join(', ');
+          var extra = s.player_count > 8 ? ' +' + (s.player_count - 8) : '';
+          inner += '<div class="srv-players">👤 ' + names + escH(extra) + '</div>';
+        }
+      } else if (!isProbing) {
+        inner += '<div class="srv-offline-msg">No active match</div>';
+      }
+
+      var tag = isOnline ? 'a' : 'div';
+      var attrs = isOnline ? ' href="' + watchUrl + '"' : '';
+      return '<' + tag + ' class="srv-card ' + stateClass + '"' + attrs + '>' + inner + '</' + tag + '>';
     });
-    return b;
-  };
 
-  if (page > 1) el.appendChild(mkBtn('‹ Prev', page - 1, false));
-  const start = Math.max(1, page - 2);
-  const end   = Math.min(pages, start + 4);
-  for (let i = start; i <= end; i++) el.appendChild(mkBtn(i, i, i === page));
-  if (page < pages) el.appendChild(mkBtn('Next ›', page + 1, false));
-}
+    container.innerHTML = '<div class="srv-row">' + cards.join('') + '</div>';
 
-/* ── search ─────────────────────────────────────────────────────── */
-function onSearch(q) {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    currentQ    = q.trim().toLowerCase();
-    currentPage = 1;
-    loadReplays();
-  }, 300);
-}
+    // If any server is probing, poll again soon for fresh results
+    var anyProbing = servers.some(function (s) { return s.status === 'probing'; });
+    if (anyProbing) {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(loadServers, 4000);
+    }
+  }
 
-/* ── boot ───────────────────────────────────────────────────────── */
-loadDirs();
+  function loadServers() {
+    fetch('/api/live/servers')
+      .then(function (r) { return r.json(); })
+      .then(function (data) { renderServers(data); })
+      .catch(function () { container.innerHTML = ''; });
+  }
+
+  // Initial load + periodic refresh every 25s
+  loadServers();
+  setInterval(loadServers, 25000);
+})();
 </script>
 {% endblock %}

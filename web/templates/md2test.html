@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MD2 Model Test</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d1018; color: #ddd; font-family: sans-serif; display: flex;
+         flex-direction: column; align-items: center; padding: 1rem; }
+  h1 { font-size: 1.1rem; margin-bottom: .7rem; color: #eee; }
+  #status { font-size: .85rem; color: #aaa; margin-bottom: .5rem; min-height: 1.2em; }
+  canvas { display: block; border-radius: 6px; border: 1px solid #333; background: #1a2030; }
+  .controls { display: flex; gap: .5rem; margin-top: .7rem; flex-wrap: wrap;
+              justify-content: center; align-items: center; }
+  button { background: #2a3044; border: 1px solid #444; color: #ccc; padding: .35rem .9rem;
+           border-radius: 4px; cursor: pointer; font-size: .85rem; }
+  button:hover { background: #3a4060; }
+  button.active { background: #4466bb; border-color: #5588ee; color: #fff; }
+  label { font-size: .85rem; color: #aaa; }
+  select { background: #2a3044; border: 1px solid #444; color: #ccc;
+           padding: .3rem .5rem; border-radius: 4px; font-size: .85rem; }
+  #info { margin-top: .6rem; font-size: .78rem; color: #666; text-align: center; line-height: 1.6; }
+</style>
+</head>
+<body>
+<h1>MD2 Player Model — Test Page</h1>
+<div id="status">Loading…</div>
+<canvas id="c" width="520" height="480"></canvas>
+<div class="controls">
+  <button id="btnStand" class="active">Stand (fr 0–39)</button>
+  <button id="btnRun">Run (fr 40–45)</button>
+  <label>Skin:
+    <select id="skinSel">
+      <option value="ctf_r">ctf_r (red team)</option>
+      <option value="ctf_b">ctf_b (blue team)</option>
+      <option value="none">None (white)</option>
+    </select>
+  </label>
+  <label>FPS: <select id="fpsSel">
+    <option value="10" selected>10</option>
+    <option value="5">5</option>
+    <option value="20">20</option>
+  </select></label>
+</div>
+<div id="info"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const canvas  = document.getElementById('c');
+const status  = document.getElementById('status');
+const infoEl  = document.getElementById('info');
+
+// ── Renderer ─────────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setSize(520, 480);
+
+// ── Scene ────────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a2030);
+
+// Grid floor for reference
+const grid = new THREE.GridHelper(200, 20, 0x334455, 0x223344);
+scene.add(grid);
+
+// Lights (for any non-basic materials, and to see normals)
+scene.add(new THREE.AmbientLight(0xffffff, 2.5));
+const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
+sun.position.set(80, 150, 60);
+scene.add(sun);
+
+// ── Camera ───────────────────────────────────────────────────────────────────
+const cam = new THREE.PerspectiveCamera(50, 520 / 480, 0.5, 10000);
+cam.position.set(0, 60, 180);
+cam.lookAt(0, 30, 0);
+
+const controls = new OrbitControls(cam, canvas);
+controls.target.set(0, 30, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.1;
+controls.update();
+
+// ── State ────────────────────────────────────────────────────────────────────
+let md2     = null;   // parsed data
+let mesh    = null;   // THREE.Mesh
+let geo     = null;   // BufferGeometry (mutable positions)
+let skins   = {};     // name → THREE.Texture | null
+let animFps = 10;
+let animT   = 0;
+let anim    = 'stand';
+let lastTs  = 0;
+
+// ── Load MD2 data ─────────────────────────────────────────────────────────────
+status.textContent = 'Fetching /api/player/male/md2 …';
+try {
+  const res = await fetch('/api/player/male/md2');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const raw = await res.json();
+  md2 = {
+    ntri:   raw.ntri,
+    uvs:    new Float32Array(raw.uvs),
+    frames: raw.frames.map(f => new Float32Array(f)),
+    anims:  raw.anims,
+  };
+  // Compute floor offset: find the minimum Y value across all stand frames
+  // so the model's lowest point (feet) lands exactly on y=0.
+  const [sStart, sEnd] = md2.anims.stand;
+  let minY = Infinity;
+  for (let fi = sStart; fi <= sEnd; fi++) {
+    const f = md2.frames[fi];
+    for (let i = 1; i < f.length; i += 3) minY = Math.min(minY, f[i]);
+  }
+  md2.floorOffset = -minY;  // shift mesh up by this amount
+  status.textContent = `MD2 loaded: ${md2.ntri} triangles, ${md2.frames.length} frames`;
+  infoEl.innerHTML =
+    `ntri=${md2.ntri} &nbsp;|&nbsp; uvs=${md2.uvs.length} &nbsp;|&nbsp; ` +
+    `frames=${md2.frames.length} &nbsp;|&nbsp; ` +
+    `stand=[${md2.anims.stand}] &nbsp;|&nbsp; run=[${md2.anims.run}]<br>` +
+    `frame[0] first 6 values: ${Array.from(md2.frames[0].slice(0,6)).map(v=>v.toFixed(2)).join(', ')} &nbsp;|&nbsp; floorOffset=${md2.floorOffset.toFixed(2)}`;
+} catch(e) {
+  status.textContent = 'ERROR loading MD2: ' + e.message;
+  console.error(e);
+}
+
+// ── Load skins ────────────────────────────────────────────────────────────────
+const texLoader = new THREE.TextureLoader();
+const loadTex = url => new Promise(res => {
+  texLoader.load(url, t => { t.colorSpace = THREE.SRGBColorSpace; res(t); },
+                  undefined, () => { console.warn('skin load failed:', url); res(null); });
+});
+const [skinR, skinB] = await Promise.all([
+  loadTex('/players/male/ctf_r.png'),
+  loadTex('/players/male/ctf_b.png'),
+]);
+skins = { ctf_r: skinR, ctf_b: skinB, none: null };
+status.textContent += ' | skins loaded';
+
+// ── Build mesh ────────────────────────────────────────────────────────────────
+function buildMesh(skinName) {
+  if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
+  if (!md2) return;
+
+  geo = new THREE.BufferGeometry();
+  const posArr = new Float32Array(md2.ntri * 9);
+  geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  geo.setAttribute('uv',       new THREE.BufferAttribute(new Float32Array(md2.uvs), 2));
+  geo.frustumCulled = false;
+
+  // Populate with frame 0 immediately
+  posArr.set(md2.frames[0]);
+  geo.attributes.position.needsUpdate = true;
+  geo.computeBoundingSphere();
+
+  const tex = skins[skinName] || null;
+  const mat = new THREE.MeshBasicMaterial({
+    map:   tex,
+    color: tex ? 0xffffff : 0xaaccff,
+    side:  THREE.DoubleSide,
+  });
+
+  mesh = new THREE.Mesh(geo, mat);
+  // Lift model so feet sit exactly on y=0 (the grid floor)
+  mesh.position.set(0, md2.floorOffset, 0);
+  scene.add(mesh);
+  status.textContent = `Mesh built — skin: ${skinName} — animate with buttons below`;
+}
+
+if (md2) buildMesh('ctf_r');
+
+// ── Animation ─────────────────────────────────────────────────────────────────
+function animate(ts) {
+  requestAnimationFrame(animate);
+  controls.update();
+
+  if (md2 && geo) {
+    const dt = Math.min((ts - lastTs) / 1000, 0.1);
+    animT += dt * animFps;
+
+    const [start, end] = md2.anims[anim];
+    const count    = end - start + 1;
+    const frameIdx = start + (Math.floor(animT) % count);
+
+    const posAttr = geo.attributes.position;
+    posAttr.array.set(md2.frames[frameIdx]);
+    posAttr.needsUpdate = true;
+
+    // Update label
+    const label = document.getElementById('frameLabel');
+    if (label) label.textContent = `frame ${frameIdx} / ${start}–${end}`;
+  }
+  lastTs = ts;
+  renderer.render(scene, cam);
+}
+requestAnimationFrame(animate);
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+document.getElementById('btnStand').addEventListener('click', () => {
+  anim = 'stand'; animT = 0;
+  document.getElementById('btnStand').classList.add('active');
+  document.getElementById('btnRun').classList.remove('active');
+});
+document.getElementById('btnRun').addEventListener('click', () => {
+  anim = 'run'; animT = 0;
+  document.getElementById('btnRun').classList.add('active');
+  document.getElementById('btnStand').classList.remove('active');
+});
+document.getElementById('skinSel').addEventListener('change', e => {
+  buildMesh(e.target.value);
+});
+document.getElementById('fpsSel').addEventListener('change', e => {
+  animFps = parseFloat(e.target.value);
+});
+</script>
+
+<!-- live frame counter injected into info row -->
+<div class="controls" style="margin-top:.3rem">
+  <span style="font-size:.8rem;color:#888">Current: <span id="frameLabel">—</span></span>
+</div>
+</body>
+</html>

@@ -1,0 +1,1377 @@
+{% extends "base.html" %}
+{% block title %}{{ map_name }} — Map Stats — AQ2{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
+  <a href="/stats" style="color:var(--muted);font-size:.85rem;">← Stats</a>
+  <h1 style="font-size:1.4rem;font-weight:700;" id="mapHeading">{{ map_name }}</h1>
+  <label style="font-size:.78rem;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:.4rem;margin-left:auto;">
+    Period:
+    <select id="periodFilter"
+      style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+             border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+      <option value="this_week">This Week</option>
+      <option value="last_week">Last Week</option>
+      <option value="this_month">This Month</option>
+      <option value="last_month">Last Month</option>
+      <option value="this_year" selected>This Year</option>
+      <option value="last_year">Last Year</option>
+      <option value="all">All Time</option>
+    </select>
+  </label>
+</div>
+<button id="mapThumbButton" type="button"
+   style="display:block;width:100%;height:200px;border:0;border-radius:var(--radius);overflow:hidden;margin-bottom:1.4rem;cursor:zoom-in;padding:0;background:none;"
+   aria-label="Open map image preview">
+  <img src="https://raw.githubusercontent.com/vrolse/AQ2-pickup-bot/main/thumbnails/{{ map_name | lower }}.jpg"
+       loading="lazy"
+       style="width:100%;height:100%;object-fit:cover;object-position:center;display:block;"
+       onerror="this.parentElement.style.display='none'">
+</button>
+<div id="mapImageModal" class="map-image-modal" aria-hidden="true">
+  <div class="map-image-modal__dialog" role="dialog" aria-modal="true" aria-label="Map image preview">
+    <button id="mapImageModalClose" type="button" class="map-image-modal__close" aria-label="Close map image">×</button>
+    <img id="mapImageModalImg"
+      src="https://raw.githubusercontent.com/vrolse/AQ2-pickup-bot/main/thumbnails/{{ map_name | lower }}.jpg"
+      loading="lazy"
+      style="display:block;max-width:100%;max-height:calc(100vh - 3rem);border-radius:var(--radius);">
+  </div>
+</div>
+
+<!-- ── Summary cards ── -->
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.7rem;margin-bottom:1.6rem;">
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="m-matches">—</div>
+    <div class="stat-label help-label" title="Matches played on this map in the selected period.">Matches</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="m-kills">—</div>
+    <div class="stat-label help-label" title="Total kills recorded on this map.">Total Kills</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="m-avgkills">—</div>
+    <div class="stat-label help-label" title="Average total kills per match on this map.">Avg K/Match</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="m-players">—</div>
+    <div class="stat-label help-label" title="Distinct players seen on this map.">Unique Players</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="m-duration">—</div>
+    <div class="stat-label help-label" title="Average match duration on this map.">Avg Duration</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" style="color:var(--t1)" id="m-t1wins">—</div>
+    <div class="stat-label help-label" title="Number of matches won by Team 1 on this map.">T1 Wins</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" style="color:var(--t2)" id="m-t2wins">—</div>
+    <div class="stat-label help-label" title="Number of matches won by Team 2 on this map.">T2 Wins</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" style="color:var(--muted)" id="m-draws">—</div>
+    <div class="stat-label help-label" title="Matches ending with tied round score.">Draws</div>
+  </div>
+</div>
+
+<!-- ── Player leaderboard ── -->
+<div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:1.5rem;">
+  <span>Player Leaderboard</span>
+  <div style="display:flex;align-items:center;gap:.8rem;">
+    <label style="font-size:.78rem;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:.4rem;">
+      Min games:
+      <select id="minGames"
+        style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+               border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+        <option value="1" selected>1</option>
+        <option value="3">3</option>
+        <option value="5">5</option>
+        <option value="10">10</option>
+      </select>
+    </label>
+    <label style="font-size:.78rem;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:.4rem;">
+      Per page:
+      <select id="pageSize"
+        style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+               border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+        <option value="25" selected>25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="0">All</option>
+      </select>
+    </label>
+  </div>
+</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="lbTable">
+    <thead>
+      <tr>
+        <th class="num help-label" style="width:2.5rem;" title="Leaderboard position after current sorting.">#</th>
+        <th data-sort="name"      class="sortable help-label" title="Player name.">Player</th>
+        <th data-sort="games"     class="num sortable help-label" title="Matches played on this map.">Games</th>
+        <th data-sort="kills"     class="num sortable help-label" title="Total kills on this map.">Kills</th>
+        <th data-sort="deaths"    class="num sortable help-label" title="Total deaths on this map.">Deaths</th>
+        <th data-sort="kd"        class="num sortable help-label" title="Kills divided by deaths.">K/D</th>
+        <th data-sort="avg_kills" class="num sortable help-label" title="Average kills per match on this map.">Avg&nbsp;K</th>
+        <th data-sort="damage"    class="num sortable help-label" title="Estimated total damage dealt on this map.">Damage</th>
+        <th data-sort="hs_kills"  class="num sortable help-label" title="Headshot kills on this map.">HS</th>
+        <th data-sort="avg_acc"   class="num sortable help-label" title="Average accuracy percentage.">Acc%</th>
+        <th data-sort="best_game" class="num sortable help-label" title="Best single-match kill count on this map.">Best</th>
+      </tr>
+    </thead>
+    <tbody id="lbBody">
+      <tr><td colspan="11" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+<div id="lbPager" style="display:none;align-items:center;justify-content:center;gap:.6rem;margin-top:.6rem;font-size:.82rem;color:var(--muted);">
+  <button id="lbPrevBtn"
+    style="background:var(--surface);border:1px solid var(--border);color:var(--text);
+           padding:.2rem .65rem;border-radius:var(--radius);cursor:pointer;font-size:.78rem;">← Prev</button>
+  <span id="lbPageInfo"></span>
+  <button id="lbNextBtn"
+    style="background:var(--surface);border:1px solid var(--border);color:var(--text);
+           padding:.2rem .65rem;border-radius:var(--radius);cursor:pointer;font-size:.78rem;">Next →</button>
+</div>
+
+<!-- ── Recent matches ── -->
+<div class="section-title" style="margin-top:2rem;">Recent Matches</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="recentTable">
+    <thead>
+      <tr>
+        <th class="help-label" title="Match date.">Date</th>
+        <th class="num help-label" title="Final round score (Team 1 - Team 2).">Score</th>
+        <th class="num help-label" title="Number of players in the match.">Players</th>
+        <th class="num help-label" title="Total kills in the match.">Kills</th>
+        <th class="num help-label" title="Match duration.">Duration</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="recentBody">
+      <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Spatial analytics ── -->
+<div class="section-title" style="margin-top:2rem;">Spatial Analytics</div>
+<div class="card" style="padding:.85rem;">
+  <div class="spatial-controls">
+    <label>
+      Layer
+      <select id="spatialKind">
+        <option value="kills" selected>Kill Heatmap</option>
+        <option value="deaths">Death Heatmap</option>
+        <option value="first_kills">First-Kill Heatmap</option>
+        <option value="fk_routes">First-Kill Approach Routes</option>
+        <option value="movement">Movement Density + Routes</option>
+        <option value="zone_risk">Danger/Safe Zones</option>
+        <option value="kills_vs_deaths">Kills vs Deaths (diff)</option>
+      </select>
+    </label>
+    <label>
+      Cell Size
+      <select id="spatialCellSize">
+        <option value="48">48</option>
+        <option value="64" selected>64</option>
+        <option value="96">96</option>
+        <option value="128">128</option>
+        <option value="160">160</option>
+        <option value="224">224</option>
+      </select>
+    </label>
+    <label>
+      Scale
+      <select id="spatialScale" title="Intensity normalization curve">
+        <option value="sqrt" selected>Sqrt (balanced)</option>
+        <option value="log">Log (highlight edges)</option>
+        <option value="linear">Linear (raw)</option>
+      </select>
+    </label>
+    <label>
+      Player
+      <input id="spatialPlayer" type="text" placeholder="All players">
+    </label>
+    <label>
+      Weapon
+      <select id="spatialWeapon">
+        <option value="">All weapons</option>
+      </select>
+    </label>
+    <button id="spatialRefresh" type="button">Refresh</button>
+    <button id="spatialFullscreen" type="button" title="Toggle fullscreen">⛶ Fullscreen</button>
+  </div>
+
+  <div id="spatialStage" class="spatial-stage">
+    <canvas id="spatialCanvas"></canvas>
+    <div id="spatialEmpty" class="spatial-empty">Loading spatial data...</div>
+    <div id="spatialTooltip" class="spatial-tooltip"></div>
+    <div id="spatialLegend" class="spatial-legend" aria-hidden="true">
+      <div class="spatial-legend__title">Intensity</div>
+      <div class="spatial-legend__bar"></div>
+      <div class="spatial-legend__scale">
+        <span id="spatialLegendMin">0</span>
+        <span id="spatialLegendMax">—</span>
+      </div>
+    </div>
+  </div>
+  <div id="spatialMeta" class="spatial-meta">Preparing map overlay...</div>
+
+  <div class="spatial-grid">
+    <div class="card" style="padding:.65rem;overflow-x:auto;">
+      <div class="spatial-subtitle">Top Routes</div>
+      <table>
+        <thead>
+          <tr>
+            <th class="help-label" title="Start cell for the movement route.">From</th>
+            <th class="help-label" title="Destination cell for the movement route.">To</th>
+            <th class="num help-label" title="How often this route appears.">Freq</th>
+          </tr>
+        </thead>
+        <tbody id="routesBody">
+          <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:.8rem;">Only shown for movement view.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card" style="padding:.65rem;overflow-x:auto;">
+      <div class="spatial-subtitle">Danger Zones</div>
+      <table>
+        <thead>
+          <tr>
+            <th class="help-label" title="Grid cell identifier.">Cell</th>
+            <th class="num help-label" title="Relative danger score for this cell.">Risk</th>
+            <th class="num help-label" title="Number of supporting events in this cell.">Events</th>
+          </tr>
+        </thead>
+        <tbody id="dangerBody">
+          <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:.8rem;">Only shown for zone risk view.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card" style="padding:.65rem;overflow-x:auto;">
+      <div class="spatial-subtitle">Safe Zones</div>
+      <table>
+        <thead>
+          <tr>
+            <th class="help-label" title="Grid cell identifier.">Cell</th>
+            <th class="num help-label" title="Relative safety score for this cell.">Safe</th>
+            <th class="num help-label" title="Number of supporting events in this cell.">Events</th>
+          </tr>
+        </thead>
+        <tbody id="safeBody">
+          <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:.8rem;">Only shown for zone risk view.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card" style="padding:.65rem;overflow-x:auto;">
+      <div class="spatial-subtitle">Spawn Pairings</div>
+      <table>
+        <thead>
+          <tr>
+            <th class="help-label" title="Team 1 spawn zone.">T1 Spawn</th>
+            <th class="help-label" title="Team 2 spawn zone.">T2 Spawn</th>
+            <th class="num help-label" title="Rounds observed with this spawn pairing.">Rounds</th>
+            <th class="num help-label" title="Advantage score for Team 1 relative to Team 2 at this spawn pairing.">Adv</th>
+          </tr>
+        </thead>
+        <tbody id="spawnBody">
+          <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:.8rem;">Loading spawn analytics...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.stat-big   { font-size:1.5rem;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums; }
+.stat-label { font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:.2rem; }
+th.sortable { cursor:pointer;user-select:none; }
+th.sortable:hover { color:var(--text); }
+.map-image-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.78);
+  z-index: 1200;
+}
+.map-image-modal.is-open { display: flex; }
+.map-image-modal__dialog {
+  position: relative;
+  max-width: min(1100px, 96vw);
+  max-height: calc(100vh - 2rem);
+}
+.map-image-modal__close {
+  position: absolute;
+  top: .45rem;
+  right: .45rem;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid rgba(255,255,255,.4);
+  border-radius: 999px;
+  background: rgba(0,0,0,.5);
+  color: #fff;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+body.map-image-modal-open { overflow: hidden; }
+.spatial-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: .55rem;
+  margin-bottom: .75rem;
+}
+.spatial-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: .22rem;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+}
+.spatial-controls select,
+.spatial-controls input,
+.spatial-controls button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .3rem .45rem;
+  font-size: .8rem;
+}
+.spatial-controls button {
+  align-self: end;
+  cursor: pointer;
+  font-weight: 600;
+}
+.spatial-stage {
+  position: relative;
+  width: 100%;
+  min-height: 460px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #0b0e16;
+}
+.spatial-stage.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  border-radius: 0;
+  min-height: 0;
+}
+body.spatial-fs-open { overflow: hidden; }
+#spatialCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.spatial-legend {
+  position: absolute;
+  bottom: .6rem;
+  left: .7rem;
+  background: rgba(10, 12, 20, .82);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: var(--radius);
+  padding: .4rem .55rem;
+  font-size: .68rem;
+  color: var(--muted);
+  pointer-events: none;
+  min-width: 150px;
+  z-index: 5;
+}
+.spatial-legend__title {
+  font-size: .62rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: .25rem;
+  color: var(--text);
+}
+.spatial-legend__bar {
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgba(255,255,255,.08), rgba(255,150,40,.9));
+  margin-bottom: .2rem;
+}
+.spatial-legend__scale {
+  display: flex;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.spatial-legend.is-hidden { display: none; }
+.spatial-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: .88rem;
+  background: rgba(11, 14, 22, .5);
+}
+.spatial-meta {
+  margin-top: .45rem;
+  font-size: .78rem;
+  color: var(--muted);
+}
+.spatial-grid {
+  margin-top: .8rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: .65rem;
+}
+.spatial-subtitle {
+  font-size: .78rem;
+  font-weight: 700;
+  margin-bottom: .4rem;
+  color: var(--text);
+}
+.spatial-tooltip {
+  position: absolute;
+  background: rgba(0,0,0,0.88);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: #e8e8e8;
+  font-size: .72rem;
+  padding: 3px 7px;
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+  display: none;
+}
+</style>
+
+<script>
+(function () {
+  'use strict';
+
+  const MAP  = {{ map_name | tojson }};
+  const base = '/api/map/' + encodeURIComponent(MAP);
+  const _periodAliases = {
+    alltime: 'all',
+    all_time: 'all',
+    thisweek: 'this_week',
+    lastweek: 'last_week',
+    thismonth: 'this_month',
+    lastmonth: 'last_month',
+    thisyear: 'this_year',
+    lastyear: 'last_year',
+    previous_year: 'last_year',
+  };
+  const _periodAllowed = new Set([
+    'this_week', 'last_week', 'this_month', 'last_month', 'this_year', 'last_year', 'all'
+  ]);
+  function _readStoredPeriod() {
+    try { return window.localStorage ? window.localStorage.getItem('aq2stats.period') : null; }
+    catch (_e) { return null; }
+  }
+  function _writeStoredPeriod(value) {
+    try {
+      if (!window.localStorage) return;
+      if (value == null) window.localStorage.removeItem('aq2stats.period');
+      else window.localStorage.setItem('aq2stats.period', value);
+    } catch (_e) { /* ignore */ }
+  }
+  const _periodFromSearch = new URLSearchParams(window.location.search).get('period');
+  const _periodSource = _periodFromSearch != null ? _periodFromSearch : _readStoredPeriod();
+  const _periodRaw = String(_periodSource || 'this_year').toLowerCase();
+  const _periodFromUrl = _periodAliases[_periodRaw] || _periodRaw;
+  const _currentPeriod = _periodAllowed.has(_periodFromUrl) ? _periodFromUrl : 'this_year';
+  const _periodSelect = document.getElementById('periodFilter');
+  if (_periodSelect) {
+    _periodSelect.value = _currentPeriod;
+    _periodSelect.addEventListener('change', function () {
+      const selected = String(this.value || 'this_year').toLowerCase();
+      _writeStoredPeriod(selected);
+      const params = new URLSearchParams(window.location.search);
+      if (selected === 'this_year') params.delete('period');
+      else params.set('period', selected);
+      const qs = params.toString();
+      window.location.search = qs ? ('?' + qs) : '';
+    });
+  }
+
+  function periodFetch(path) {
+    const sep = path.includes('?') ? '&' : '?';
+    return fetch(path + sep + 'period=' + encodeURIComponent(_currentPeriod));
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function fmt(n, dec) {
+    if (n == null || n === '') return '—';
+    const v = parseFloat(n);
+    if (isNaN(v)) return '—';
+    return dec != null ? v.toFixed(dec) : v.toLocaleString();
+  }
+  function fmtDate(unix) {
+    if (!unix) return '—';
+    return new Date(unix * 1000).toLocaleDateString(undefined,
+      { year:'numeric', month:'short', day:'numeric' });
+  }
+  function fmtDuration(mins) {
+    if (mins == null) return '—';
+    const m = Math.round(parseFloat(mins));
+    return isNaN(m) ? '—' : m + ' min';
+  }
+  function setEl(id, val) { const e = document.getElementById(id); if (e) e.textContent = val; }
+  function playerLink(name) {
+    return `<a href="/player/${encodeURIComponent(name)}" style="color:var(--text);font-weight:600;">${escHtml(name)}</a>`;
+  }
+
+  const _mapThumbButton = document.getElementById('mapThumbButton');
+  const _mapImageModal = document.getElementById('mapImageModal');
+  const _mapImageModalClose = document.getElementById('mapImageModalClose');
+
+  function _openMapImageModal() {
+    if (!_mapImageModal) return;
+    _mapImageModal.classList.add('is-open');
+    _mapImageModal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('map-image-modal-open');
+  }
+
+  function _closeMapImageModal() {
+    if (!_mapImageModal) return;
+    _mapImageModal.classList.remove('is-open');
+    _mapImageModal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('map-image-modal-open');
+  }
+
+  if (_mapThumbButton) {
+    _mapThumbButton.addEventListener('click', _openMapImageModal);
+  }
+  if (_mapImageModalClose) {
+    _mapImageModalClose.addEventListener('click', _closeMapImageModal);
+  }
+  if (_mapImageModal) {
+    _mapImageModal.addEventListener('click', function (event) {
+      if (event.target === _mapImageModal) _closeMapImageModal();
+    });
+  }
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && _mapImageModal && _mapImageModal.classList.contains('is-open')) {
+      _closeMapImageModal();
+    }
+  });
+
+  // ── Spatial analytics ─────────────────────────────────────────────────────
+  const _spatialKindEl = document.getElementById('spatialKind');
+  const _spatialCellEl = document.getElementById('spatialCellSize');
+  const _spatialScaleEl = document.getElementById('spatialScale');
+  const _spatialPlayerEl = document.getElementById('spatialPlayer');
+  const _spatialWeaponEl = document.getElementById('spatialWeapon');
+  const _spatialRefreshEl = document.getElementById('spatialRefresh');
+  const _spatialFullscreenEl = document.getElementById('spatialFullscreen');
+  const _spatialCanvas = document.getElementById('spatialCanvas');
+  const _spatialStage = document.getElementById('spatialStage');
+  const _spatialEmpty = document.getElementById('spatialEmpty');
+  const _spatialMeta = document.getElementById('spatialMeta');
+  const _spatialLegend = document.getElementById('spatialLegend');
+  const _spatialLegendMin = document.getElementById('spatialLegendMin');
+  const _spatialLegendMax = document.getElementById('spatialLegendMax');
+  const _routesBody = document.getElementById('routesBody');
+  const _dangerBody = document.getElementById('dangerBody');
+  const _safeBody = document.getElementById('safeBody');
+  const _spawnBody = document.getElementById('spawnBody');
+  const _spatialTooltip = document.getElementById('spatialTooltip');
+
+  let _spatialTopview = null;
+  let _spatialTopviewPromise = null;
+  let _spatialPayload = null;
+  let _spatialLastKind = 'kills';
+  let _spatialCells = [];
+  let _spatialScale = 'sqrt';
+
+  function _normalizeIntensity(count, peak) {
+    if (!(peak > 0) || count <= 0) return 0;
+    const ratio = count / peak;
+    if (_spatialScale === 'log') {
+      return Math.log1p(count) / Math.log1p(peak);
+    }
+    if (_spatialScale === 'linear') {
+      return Math.max(0, Math.min(1, ratio));
+    }
+    return Math.sqrt(Math.max(0, Math.min(1, ratio)));
+  }
+
+  // Classic heatmap rainbow ramps: each stop is [offset, r, g, b]
+  const _HEAT_RAMPS = {
+    kills:       [[0,40,60,200], [0.25,40,200,220], [0.5,110,220,80], [0.75,250,220,50], [1,250,70,50]],
+    first_kills: [[0,40,60,200], [0.25,40,200,220], [0.5,110,220,80], [0.75,250,220,50], [1,250,70,50]],
+    movement:    [[0,40,60,160], [0.3,60,200,200], [0.6,110,220,110], [1,255,230,80]],
+    deaths:      [[0,20,30,90],  [0.35,40,90,200], [0.7,60,170,240], [1,210,240,255]],
+  };
+
+  function _lerpColor(stops, t) {
+    t = Math.max(0, Math.min(1, Number(t || 0)));
+    for (let i = 0; i < stops.length - 1; i++) {
+      const a = stops[i], b = stops[i + 1];
+      if (t <= b[0]) {
+        const span = (b[0] - a[0]) || 1;
+        const k = (t - a[0]) / span;
+        return [
+          Math.round(a[1] + (b[1] - a[1]) * k),
+          Math.round(a[2] + (b[2] - a[2]) * k),
+          Math.round(a[3] + (b[3] - a[3]) * k),
+        ];
+      }
+    }
+    const last = stops[stops.length - 1];
+    return [last[1], last[2], last[3]];
+  }
+
+  function _rampGradientCss(stops) {
+    const parts = stops.map(function (s) {
+      return 'rgb(' + s[1] + ',' + s[2] + ',' + s[3] + ') ' + (s[0] * 100).toFixed(0) + '%';
+    });
+    return 'linear-gradient(90deg, ' + parts.join(', ') + ')';
+  }
+
+  function _legendGradientFor(kind) {
+    if (_HEAT_RAMPS[kind]) return _rampGradientCss(_HEAT_RAMPS[kind]);
+    if (kind === 'zone_risk') return 'linear-gradient(90deg, rgb(60,140,255), rgb(255,200,40), rgb(232,93,93))';
+    if (kind === 'kills_vs_deaths') return 'linear-gradient(90deg, rgb(60,140,255), rgb(30,32,42), rgb(255,110,80))';
+    return _rampGradientCss(_HEAT_RAMPS.kills);
+  }
+
+  function _updateLegend(kind, maxCount) {
+    if (!_spatialLegend) return;
+    const bar = _spatialLegend.querySelector('.spatial-legend__bar');
+    if (bar) bar.style.background = _legendGradientFor(kind);
+    if (_spatialLegendMin) _spatialLegendMin.textContent = kind === 'kills_vs_deaths' ? '−' + fmt(maxCount) : '0';
+    if (_spatialLegendMax) _spatialLegendMax.textContent = kind === 'kills_vs_deaths' ? '+' + fmt(maxCount) : fmt(maxCount);
+    _spatialLegend.classList.remove('is-hidden');
+  }
+
+  function _hideLegend() {
+    if (_spatialLegend) _spatialLegend.classList.add('is-hidden');
+  }
+
+  function _coordLabel(x, y) {
+    return `${Math.round(x)}, ${Math.round(y)}`;
+  }
+
+  function _setSpatialMeta(msg) {
+    if (_spatialMeta) _spatialMeta.textContent = msg;
+  }
+
+  function _setSpatialEmpty(msg) {
+    if (!_spatialEmpty) return;
+    _spatialEmpty.textContent = msg;
+    _spatialEmpty.style.display = '';
+  }
+
+  function _hideSpatialEmpty() {
+    if (_spatialEmpty) _spatialEmpty.style.display = 'none';
+  }
+
+  function _renderRoutes(rows) {
+    if (!_routesBody) return;
+    if (!rows || !rows.length) {
+      _routesBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:.8rem;">No route data in current filter.</td></tr>';
+      return;
+    }
+    _routesBody.innerHTML = rows.slice(0, 10).map(r => `
+      <tr>
+        <td>${_coordLabel(r.from_x, r.from_y)}</td>
+        <td>${_coordLabel(r.to_x, r.to_y)}</td>
+        <td class="num">${fmt(r.count)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function _renderZoneTables(danger, safe) {
+    if (_dangerBody) {
+      if (!danger || !danger.length) {
+        _dangerBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:.8rem;">No danger cells for current filter.</td></tr>';
+      } else {
+        _dangerBody.innerHTML = danger.slice(0, 10).map(c => `
+          <tr>
+            <td>${_coordLabel(c.x, c.y)}</td>
+            <td class="num">${fmt(c.danger_score, 1)}</td>
+            <td class="num">${fmt(c.total)}</td>
+          </tr>
+        `).join('');
+      }
+    }
+    if (_safeBody) {
+      if (!safe || !safe.length) {
+        _safeBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:.8rem;">No safe cells for current filter.</td></tr>';
+      } else {
+        _safeBody.innerHTML = safe.slice(0, 10).map(c => `
+          <tr>
+            <td>${_coordLabel(c.x, c.y)}</td>
+            <td class="num">${fmt(c.safe_score, 1)}</td>
+            <td class="num">${fmt(c.total)}</td>
+          </tr>
+        `).join('');
+      }
+    }
+  }
+
+  function _renderSpawn(rows) {
+    if (!_spawnBody) return;
+    if (!rows || !rows.length) {
+      _spawnBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:.8rem;">No spawn pairing data yet.</td></tr>';
+      return;
+    }
+    _spawnBody.innerHTML = rows.slice(0, 12).map(r => `
+      <tr>
+        <td>${_coordLabel(r.team1_spawn_x, r.team1_spawn_y)}</td>
+        <td>${_coordLabel(r.team2_spawn_x, r.team2_spawn_y)}</td>
+        <td class="num">${fmt(r.rounds)}</td>
+        <td class="num">${fmt(r.spawn_advantage, 1)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function _spatialColor(kind, intensity, cell) {
+    if (kind === 'zone_risk') {
+      const v = Math.max(0, Math.min(1, Number(intensity || 0)));
+      const alpha = 0.18 + Math.pow(v, 0.75) * 0.78;
+      const danger = Math.max(0, Math.min(100, Number((cell && cell.danger_score) || 0)));
+      const hue = 210 - (danger * 2.1); // blue -> red
+      return { fill: `hsla(${hue}, 88%, ${60 - (v * 16)}%, ${alpha})` };
+    }
+    if (kind === 'kills_vs_deaths') {
+      const signed = Math.max(-1, Math.min(1, Number(intensity || 0)));
+      const mag = Math.abs(signed);
+      const diffAlpha = 0.18 + Math.pow(mag, 0.75) * 0.78;
+      const hue = signed >= 0 ? 22 : 212; // orange kills vs blue deaths
+      return { fill: `hsla(${hue}, 94%, ${60 - (mag * 16)}%, ${diffAlpha})` };
+    }
+    // Density kinds (kills / first_kills / movement / deaths) use rainbow ramps
+    const v = Math.max(0, Math.min(1, Number(intensity || 0)));
+    const stops = _HEAT_RAMPS[kind] || _HEAT_RAMPS.kills;
+    const rgb = _lerpColor(stops, v);
+    const alpha = 0.22 + Math.pow(v, 0.7) * 0.7;
+    return { fill: `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha.toFixed(3)})` };
+  }
+
+  function _projectionFromBounds(bounds, width, height) {
+    const b = {
+      min_x: Number(bounds.min_x || 0),
+      max_x: Number(bounds.max_x || 1),
+      min_y: Number(bounds.min_y || 0),
+      max_y: Number(bounds.max_y || 1),
+    };
+    if (typeof makeProjection === 'function') {
+      return makeProjection({ bounds: b }, width, height, 20);
+    }
+    const rangeX = (b.max_x - b.min_x) || 1;
+    const rangeY = (b.max_y - b.min_y) || 1;
+    const pad = 20;
+    const scale = Math.min((width - (pad * 2)) / rangeX, (height - (pad * 2)) / rangeY);
+    const offX = pad + ((width - (pad * 2)) - (rangeX * scale)) / 2;
+    const offY = pad + ((height - (pad * 2)) - (rangeY * scale)) / 2;
+    return {
+      toCanvas(wx, wy) {
+        return [
+          offX + ((wx - b.min_x) * scale),
+          offY + ((b.max_y - wy) * scale),
+        ];
+      }
+    };
+  }
+
+  function _ensureSpatialTopview() {
+    if (_spatialTopviewPromise) return _spatialTopviewPromise;
+    _spatialTopviewPromise = fetch('/api/map/' + encodeURIComponent(MAP) + '/topview.json')
+      .then(r => r.ok ? r.json() : null)
+      .then(params => {
+        if (!params) return null;
+        return fetch('/api/map/' + encodeURIComponent(MAP) + '/topview.svg')
+          .then(r => {
+            if (!r.ok) throw new Error('svg');
+            return r.blob();
+          })
+          .then(blob => new Promise((resolve, reject) => {
+            const blobUrl = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = function () {
+              const wUnits = Math.max(1, Number(params.max_x || 1) - Number(params.min_x || 0));
+              const hUnits = Math.max(1, Number(params.max_y || 1) - Number(params.min_y || 0));
+              const rw = 1200;
+              const rh = Math.max(1, Math.round((rw * hUnits) / wUnits));
+              const oc = document.createElement('canvas');
+              oc.width = rw;
+              oc.height = rh;
+              const octx = oc.getContext('2d');
+              octx.drawImage(img, 0, 0, rw, rh);
+              URL.revokeObjectURL(blobUrl);
+              resolve({ img: oc, params: params });
+            };
+            img.onerror = function () {
+              URL.revokeObjectURL(blobUrl);
+              reject(new Error('topview decode'));
+            };
+            img.src = blobUrl;
+          }));
+      })
+      .then(tv => {
+        _spatialTopview = tv;
+        return tv;
+      })
+      .catch(() => {
+        _spatialTopview = null;
+        return null;
+      });
+    return _spatialTopviewPromise;
+  }
+
+  function _drawRouteArrows(ctx, routes, proj) {
+    if (!routes || !routes.length) return;
+    const isFK = (_spatialLastKind === 'fk_routes');
+    const maxC = Math.max.apply(null, routes.map(function (r) { return r.count || 0; }).concat([1]));
+    const drawn = routes.slice(0, 20);
+    for (var i = 0; i < drawn.length; i++) {
+      const r = drawn[i];
+      const p1 = proj.toCanvas(r.from_x, r.from_y);
+      const p2 = proj.toCanvas(r.to_x,   r.to_y);
+      const dx = p2[0] - p1[0], dy = p2[1] - p1[1];
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 6) continue;
+      const t = (r.intensity != null ? r.intensity : (r.count / maxC));
+      const thick = 1 + t * 4;
+      const alpha = 0.3 + t * 0.65;
+      const color = isFK ? 'rgba(255,160,20,' + alpha + ')' : 'rgba(80,230,100,' + alpha + ')';
+      const angle = Math.atan2(dy, dx);
+      const trim = 0.12;
+      const sx = p1[0] + dx * trim, sy = p1[1] + dy * trim;
+      const ex = p2[0] - dx * trim, ey = p2[1] - dy * trim;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = thick;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+      const aLen = Math.min(8 + thick * 1.5, len * 0.32);
+      ctx.beginPath();
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(ex - aLen * Math.cos(angle - Math.PI / 6), ey - aLen * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(ex - aLen * Math.cos(angle + Math.PI / 6), ey - aLen * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function _renderSpatialOverlay() {
+    if (!_spatialCanvas || !_spatialStage || !_spatialPayload) return;
+    const kind = _spatialLastKind;
+    const isFullscreen = _spatialStage.classList.contains('is-fullscreen');
+    const stageW = Math.max(320, _spatialStage.clientWidth || 320);
+    const stageH = isFullscreen
+      ? Math.max(320, _spatialStage.clientHeight || 320)
+      : Math.max(460, Math.round(stageW * 0.7));
+    if (!isFullscreen) _spatialStage.style.height = stageH + 'px';
+    _spatialCanvas.width = stageW;
+    _spatialCanvas.height = stageH;
+
+    const ctx = _spatialCanvas.getContext('2d');
+    ctx.fillStyle = '#0b0e16';
+    ctx.fillRect(0, 0, stageW, stageH);
+
+    const srcBounds = (
+      _spatialTopview && _spatialTopview.params
+        ? _spatialTopview.params
+        : (_spatialPayload.bounds || { min_x: -500, max_x: 500, min_y: -500, max_y: 500 })
+    );
+    const proj = _projectionFromBounds(srcBounds, stageW, stageH);
+
+    if (_spatialTopview && _spatialTopview.img && _spatialTopview.params && typeof drawTopview === 'function') {
+      drawTopview(ctx, _spatialTopview.img, _spatialTopview.params, proj);
+      // Dim the topview so the heatmap layer stays high-contrast.
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(0, 0, stageW, stageH);
+    }
+
+    const cellSize = Number(_spatialPayload.cell_size || 128);
+    let cells;
+    if (kind === 'movement') {
+      cells = _spatialPayload.heatmap || [];
+    } else if (kind === 'kills_vs_deaths') {
+      cells = _spatialPayload.diff_cells || [];
+    } else {
+      cells = _spatialPayload.cells || [];
+    }
+
+    if (!cells.length) {
+      _setSpatialEmpty('No spatial data for this filter set.');
+      _setSpatialMeta('No cells available. Try a larger period or clear player/weapon filters.');
+      _hideLegend();
+      return;
+    }
+
+    _hideSpatialEmpty();
+
+    let peak;
+    if (kind === 'kills_vs_deaths') {
+      peak = Math.max.apply(null, cells.map(function (c) { return Math.abs(Number(c.diff || 0)); }).concat([1]));
+    } else if (kind === 'movement') {
+      peak = Number(_spatialPayload.heatmap_max_count || 0);
+    } else {
+      peak = Number(_spatialPayload.max_count || 0);
+    }
+    if (!(peak > 0)) {
+      peak = Math.max.apply(null, cells.map(function (c) { return Number(c.count || 0); }).concat([1]));
+    }
+
+    // Compute blur radius from first cell pixel footprint.
+    const half0 = cellSize / 2;
+    const firstCell = cells[0];
+    const fc1 = proj.toCanvas(Number(firstCell.x || 0) - half0, Number(firstCell.y || 0) + half0);
+    const fc2 = proj.toCanvas(Number(firstCell.x || 0) + half0, Number(firstCell.y || 0) - half0);
+    const cellPixW = Math.max(4, Math.abs(fc2[0] - fc1[0]));
+    const blurPx = Math.max(4, Math.round(cellPixW * 0.6));
+
+    // Draw cells to an offscreen canvas, then composite with blur.
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = stageW;
+    tmpCanvas.height = stageH;
+    const tmpCtx = tmpCanvas.getContext('2d');
+
+    _spatialCells = [];
+    for (const cell of cells) {
+      const count = Number(cell.count || 0);
+      let intensity;
+      if (kind === 'zone_risk') {
+        intensity = Number(cell.danger_score || 0) / 100;
+      } else if (kind === 'kills_vs_deaths') {
+        const diff = Number(cell.diff || 0);
+        const sign = diff >= 0 ? 1 : -1;
+        intensity = sign * _normalizeIntensity(Math.abs(diff), peak);
+      } else {
+        intensity = _normalizeIntensity(count, peak);
+      }
+      const col = _spatialColor(kind, intensity, cell);
+      const half = cellSize / 2;
+      const [x1, y1] = proj.toCanvas(Number(cell.x || 0) - half, Number(cell.y || 0) + half);
+      const [x2, y2] = proj.toCanvas(Number(cell.x || 0) + half, Number(cell.y || 0) - half);
+      const rx = Math.min(x1, x2);
+      const ry = Math.min(y1, y2);
+      const rw = Math.max(1, Math.abs(x2 - x1));
+      const rh = Math.max(1, Math.abs(y2 - y1));
+      tmpCtx.fillStyle = col.fill;
+      tmpCtx.fillRect(rx, ry, rw, rh);
+      const labelCount = kind === 'kills_vs_deaths' ? Number(cell.diff || 0) : count;
+      _spatialCells.push({ rx: rx, ry: ry, rw: rw, rh: rh, count: labelCount, x: cell.x, y: cell.y });
+    }
+
+    // Composite blurred heatmap layer over the topview. Density kinds use
+    // additive ('lighter') blending so overlapping cells build up brightness
+    // naturally; diff / zone_risk keep normal blending to preserve signed hues.
+    const useAdditive = (kind !== 'zone_risk' && kind !== 'kills_vs_deaths');
+    ctx.filter = 'blur(' + blurPx + 'px)';
+    if (useAdditive) ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = useAdditive ? 1.0 : 0.92;
+    ctx.drawImage(tmpCanvas, 0, 0);
+    ctx.filter = 'none';
+    ctx.globalAlpha = 1.0;
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Draw route arrows for movement / fk_routes layers.
+    if (kind === 'movement' || kind === 'fk_routes') {
+      _drawRouteArrows(ctx, (_spatialPayload && _spatialPayload.routes) || [], proj);
+    }
+
+    _updateLegend(kind, peak);
+
+    let totalPoints;
+    if (kind === 'movement') {
+      totalPoints = Number(_spatialPayload.heatmap_total_points || 0);
+    } else if (kind === 'kills_vs_deaths') {
+      totalPoints = Number(_spatialPayload.total_diff_cells || cells.length);
+    } else {
+      totalPoints = Number(_spatialPayload.total_points || 0);
+    }
+    const peakLabel = kind === 'kills_vs_deaths' ? ('±' + fmt(peak) + ' net') : (fmt(peak) + ' events');
+    _setSpatialMeta(cells.length + ' cells • ' + fmt(totalPoints) + ' points • peak ' + peakLabel + ' • scale: ' + _spatialScale);
+  }
+
+  function _buildSpatialPath() {
+    const kind = String((_spatialKindEl && _spatialKindEl.value) || 'kills').toLowerCase();
+    const cell = Number((_spatialCellEl && _spatialCellEl.value) || 128);
+    const player = ((_spatialPlayerEl && _spatialPlayerEl.value) || '').trim();
+    const weapon = ((_spatialWeaponEl && _spatialWeaponEl.value) || '').trim();
+
+    const qp = new URLSearchParams();
+    qp.set('cell_size', String(cell));
+    if (player) qp.set('player', player);
+    if (weapon) qp.set('weapon', weapon);
+
+    if (kind === 'movement') {
+      qp.set('route_cell_size', String(Math.round(cell * 1.5)));
+      qp.set('route_limit', '20');
+      qp.set('sample_limit', '150000');
+      qp.set('max_frame_gap', '50');
+      return { kind, path: base + '/movement?' + qp.toString() };
+    }
+    if (kind === 'fk_routes') {
+      qp.set('route_cell_size', String(Math.round(cell * 1.5)));
+      qp.set('route_limit', '20');
+      qp.set('lookback_frames', '80');
+      return { kind, path: base + '/fk-routes?' + qp.toString() };
+    }
+    if (kind === 'zone_risk') {
+      qp.set('min_events', '2');
+      qp.set('limit', '180');
+      return { kind, path: base + '/zone-risk?' + qp.toString() };
+    }
+    if (kind === 'kills_vs_deaths') {
+      const killsQp = new URLSearchParams(qp);
+      killsQp.set('kind', 'kills');
+      killsQp.set('limit', '2000');
+      const deathsQp = new URLSearchParams(qp);
+      deathsQp.set('kind', 'deaths');
+      deathsQp.set('limit', '2000');
+      return {
+        kind,
+        compare: {
+          a: base + '/heatmap?' + killsQp.toString(),
+          b: base + '/heatmap?' + deathsQp.toString(),
+        },
+      };
+    }
+    qp.set('kind', kind);
+    qp.set('limit', '2000');
+    return { kind, path: base + '/heatmap?' + qp.toString() };
+  }
+
+  function _mergeKillsVsDeaths(killsPayload, deathsPayload) {
+    const killsCells = (killsPayload && killsPayload.cells) || [];
+    const deathsCells = (deathsPayload && deathsPayload.cells) || [];
+    const bucket = new Map();
+    const keyOf = function (c) { return Math.round(Number(c.x || 0)) + ':' + Math.round(Number(c.y || 0)); };
+    for (const c of killsCells) {
+      const k = keyOf(c);
+      const entry = bucket.get(k) || { x: c.x, y: c.y, kills: 0, deaths: 0 };
+      entry.kills += Number(c.count || 0);
+      bucket.set(k, entry);
+    }
+    for (const c of deathsCells) {
+      const k = keyOf(c);
+      const entry = bucket.get(k) || { x: c.x, y: c.y, kills: 0, deaths: 0 };
+      entry.deaths += Number(c.count || 0);
+      bucket.set(k, entry);
+    }
+    const diffCells = [];
+    let peak = 0;
+    bucket.forEach(function (entry) {
+      const diff = entry.kills - entry.deaths;
+      if (diff === 0) return;
+      diffCells.push({
+        x: entry.x,
+        y: entry.y,
+        diff: diff,
+        count: entry.kills + entry.deaths,
+        kills: entry.kills,
+        deaths: entry.deaths,
+      });
+      const mag = Math.abs(diff);
+      if (mag > peak) peak = mag;
+    });
+    return {
+      cell_size: (killsPayload && killsPayload.cell_size) || (deathsPayload && deathsPayload.cell_size) || 128,
+      bounds: (killsPayload && killsPayload.bounds) || (deathsPayload && deathsPayload.bounds) || null,
+      diff_cells: diffCells,
+      max_count: peak,
+      total_diff_cells: diffCells.length,
+      total_points: (killsPayload && killsPayload.total_points || 0) + (deathsPayload && deathsPayload.total_points || 0),
+    };
+  }
+
+  function loadSpatial() {
+    if (!_spatialCanvas) return;
+    const spec = _buildSpatialPath();
+    _spatialLastKind = spec.kind;
+    _setSpatialEmpty('Loading spatial data...');
+    _setSpatialMeta('Loading analytics...');
+
+    if (spec.kind !== 'movement' && spec.kind !== 'fk_routes') _renderRoutes([]);
+    if (spec.kind !== 'zone_risk') _renderZoneTables([], []);
+
+    _ensureSpatialTopview().finally(() => {
+      const spawnCell = Number((_spatialCellEl && _spatialCellEl.value) || 128);
+      periodFetch(base + '/spawn-analytics?cell_size=' + encodeURIComponent(spawnCell) + '&limit=12')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => _renderSpawn((data && data.pairings) || []))
+        .catch(() => _renderSpawn([]));
+
+      const fetchJsonPath = function (path) {
+        return periodFetch(path).then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        });
+      };
+
+      const request = spec.compare
+        ? Promise.all([fetchJsonPath(spec.compare.a), fetchJsonPath(spec.compare.b)])
+            .then(function (pair) { return _mergeKillsVsDeaths(pair[0], pair[1]); })
+        : fetchJsonPath(spec.path);
+
+      request
+        .then(data => {
+          _spatialPayload = data || {};
+          _renderSpatialOverlay();
+          if (spec.kind === 'movement' || spec.kind === 'fk_routes') {
+            _renderRoutes((_spatialPayload && _spatialPayload.routes) || []);
+          }
+          if (spec.kind === 'zone_risk') {
+            _renderZoneTables(
+              (_spatialPayload && _spatialPayload.dangerous) || [],
+              (_spatialPayload && _spatialPayload.safe) || []
+            );
+          }
+        })
+        .catch(() => {
+          _setSpatialEmpty('Failed to load spatial analytics.');
+          _setSpatialMeta('Spatial API request failed for current filters.');
+          _hideLegend();
+        });
+    });
+  }
+
+  function _toggleSpatialFullscreen() {
+    if (!_spatialStage) return;
+    const entering = !_spatialStage.classList.contains('is-fullscreen');
+    _spatialStage.classList.toggle('is-fullscreen', entering);
+    document.body.classList.toggle('spatial-fs-open', entering);
+    if (_spatialFullscreenEl) {
+      _spatialFullscreenEl.textContent = entering ? '⛶ Exit' : '⛶ Fullscreen';
+    }
+    if (_spatialPayload) _renderSpatialOverlay();
+  }
+
+  if (_spatialRefreshEl) _spatialRefreshEl.addEventListener('click', loadSpatial);
+  if (_spatialKindEl) _spatialKindEl.addEventListener('change', loadSpatial);
+  if (_spatialCellEl) _spatialCellEl.addEventListener('change', loadSpatial);
+  if (_spatialScaleEl) _spatialScaleEl.addEventListener('change', function () {
+    _spatialScale = this.value || 'sqrt';
+    if (_spatialPayload) _renderSpatialOverlay();
+  });
+  if (_spatialPlayerEl) _spatialPlayerEl.addEventListener('change', loadSpatial);
+  if (_spatialWeaponEl) _spatialWeaponEl.addEventListener('change', loadSpatial);
+  if (_spatialFullscreenEl) _spatialFullscreenEl.addEventListener('click', _toggleSpatialFullscreen);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && _spatialStage && _spatialStage.classList.contains('is-fullscreen')) {
+      _toggleSpatialFullscreen();
+    }
+  });
+
+  // Populate weapon dropdown from this map's kill data
+  if (_spatialWeaponEl) {
+    fetch(base + '/weapons')
+      .then(r => r.ok ? r.json() : [])
+      .then(weapons => {
+        if (!weapons || !weapons.length) return;
+        weapons.forEach(w => {
+          const opt = document.createElement('option');
+          opt.value = w;
+          opt.textContent = w;
+          _spatialWeaponEl.appendChild(opt);
+        });
+      })
+      .catch(() => {});
+  }
+
+  if (window.AQ2Stats && _spatialPlayerEl) {
+    window.AQ2Stats.initPlayerAutocomplete(_spatialPlayerEl, {
+      onSelect: function (name) { _spatialPlayerEl.value = name; loadSpatial(); }
+    });
+  }
+  if (_spatialCanvas && _spatialTooltip) {
+    _spatialCanvas.addEventListener('mousemove', function (e) {
+      const rect = _spatialCanvas.getBoundingClientRect();
+      const scaleX = _spatialCanvas.width / (rect.width || 1);
+      const scaleY = _spatialCanvas.height / (rect.height || 1);
+      const mx = (e.clientX - rect.left) * scaleX;
+      const my = (e.clientY - rect.top) * scaleY;
+      let found = false;
+      for (var ci = 0; ci < _spatialCells.length; ci++) {
+        const c = _spatialCells[ci];
+        if (mx >= c.rx && mx <= c.rx + c.rw && my >= c.ry && my <= c.ry + c.rh) {
+          let label;
+          if (_spatialLastKind === 'kills_vs_deaths') {
+            const sign = c.count >= 0 ? '+' : '';
+            label = '(' + Math.round(c.x) + ', ' + Math.round(c.y) + ')  —  net ' + sign + c.count;
+          } else {
+            label = '(' + Math.round(c.x) + ', ' + Math.round(c.y) + ')  —  ' + c.count + ' events';
+          }
+          _spatialTooltip.textContent = label;
+          _spatialTooltip.style.left = (e.clientX - rect.left + 14) + 'px';
+          _spatialTooltip.style.top  = (e.clientY - rect.top  - 10) + 'px';
+          _spatialTooltip.style.display = 'block';
+          found = true;
+          break;
+        }
+      }
+      if (!found) _spatialTooltip.style.display = 'none';
+    });
+    _spatialCanvas.addEventListener('mouseleave', function () {
+      _spatialTooltip.style.display = 'none';
+    });
+  }
+  window.addEventListener('resize', function () {
+    if (_spatialPayload) _renderSpatialOverlay();
+  });
+
+  // ── Summary ────────────────────────────────────────────────────────────────
+  periodFetch(base + '/detail').then(r=>r.json()).then(d => {
+    setEl('m-matches',  fmt(d.matches));
+    setEl('m-kills',    fmt(d.total_kills));
+    setEl('m-avgkills', d.avg_kills != null ? parseFloat(d.avg_kills).toFixed(1) : '—');
+    setEl('m-players',  fmt(d.unique_players));
+    setEl('m-duration', fmtDuration(d.avg_duration_min));
+    setEl('m-t1wins',   fmt(d.t1_wins));
+    setEl('m-t2wins',   fmt(d.t2_wins));
+    setEl('m-draws',    fmt(d.draws));
+  }).catch(()=>{});
+
+  // ── Leaderboard — sortable + paginated ────────────────────────────────────
+  let _lbData = [];
+  let _lbSort = { col: 'kills', dir: -1 };
+  let _lbPage = 0;
+  let _lbPageSize = 25;
+
+  function _renderPager() {
+    const pager = document.getElementById('lbPager');
+    const total    = _lbData.length;
+    const pageSize = _lbPageSize === 0 ? total : _lbPageSize;
+    if (total === 0 || pageSize >= total) { pager.style.display = 'none'; return; }
+    const maxPage = Math.ceil(total / pageSize) - 1;
+    pager.style.display = 'flex';
+    document.getElementById('lbPrevBtn').disabled = _lbPage === 0;
+    document.getElementById('lbNextBtn').disabled = _lbPage >= maxPage;
+    const start = _lbPage * pageSize + 1;
+    const end   = Math.min((_lbPage + 1) * pageSize, total);
+    document.getElementById('lbPageInfo').textContent = `${start}–${end} of ${total}`;
+  }
+
+  function renderLb() {
+    const { col, dir } = _lbSort;
+    _lbData.sort((a, b) => {
+      let av = a[col], bv = b[col];
+      if (av == null) av = -Infinity;
+      if (bv == null) bv = -Infinity;
+      return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
+    });
+    const tbody = document.getElementById('lbBody');
+    if (!_lbData.length) {
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:1.5rem;">No data — try lowering the filter.</td></tr>';
+      _renderPager();
+      return;
+    }
+    const total    = _lbData.length;
+    const pageSize = _lbPageSize === 0 ? total : _lbPageSize;
+    const maxPage  = Math.ceil(total / pageSize) - 1;
+    if (_lbPage > maxPage) _lbPage = maxPage;
+    const start = _lbPage * pageSize;
+    const end   = Math.min(start + pageSize, total);
+    tbody.innerHTML = _lbData.slice(start, end).map((r, i) => {
+      const kd = r.deaths ? (r.kills / r.deaths).toFixed(2) : (r.kills || 0).toFixed(2);
+      return `<tr>
+        <td class="num" style="color:var(--muted)">${start + i + 1}</td>
+        <td>${playerLink(r.name)}</td>
+        <td class="num">${r.games}</td>
+        <td class="num">${fmt(r.kills)}</td>
+        <td class="num">${fmt(r.deaths)}</td>
+        <td class="num" style="color:${parseFloat(kd)>=1?'var(--green)':'var(--accent2)'}">${kd}</td>
+        <td class="num">${fmt(r.avg_kills, 1)}</td>
+        <td class="num">${fmt(r.damage)}</td>
+        <td class="num">${fmt(r.hs_kills)}</td>
+        <td class="num">${r.avg_acc != null ? parseFloat(r.avg_acc).toFixed(1)+'%' : '—'}</td>
+        <td class="num">${fmt(r.best_game)}</td>
+      </tr>`;
+    }).join('');
+    _renderPager();
+  }
+
+  function loadLeaderboard(minGames) {
+    document.getElementById('lbBody').innerHTML =
+      '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>';
+    periodFetch(base + '/leaderboard?min_games=' + (minGames || 1))
+      .then(r=>r.json())
+      .then(data => { _lbData = data; _lbPage = 0; renderLb(); })
+      .catch(() => {
+        document.getElementById('lbBody').innerHTML =
+          '<tr><td colspan="11" style="text-align:center;color:var(--accent2);padding:1rem;">Failed to load.</td></tr>';
+      });
+  }
+
+  document.getElementById('lbTable').querySelector('thead').addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    const col = th.dataset.sort;
+    _lbSort.col === col ? (_lbSort.dir *= -1) : (_lbSort.col = col, _lbSort.dir = col === 'name' ? 1 : -1);
+    document.querySelectorAll('#lbTable th[data-sort]').forEach(h => {
+      h.style.color = h.dataset.sort === col ? 'var(--text)' : '';
+    });
+    renderLb();
+  });
+  document.getElementById('minGames').addEventListener('change', function () {
+    loadLeaderboard(parseInt(this.value, 10));
+  });
+  document.getElementById('pageSize').addEventListener('change', function () {
+    _lbPageSize = parseInt(this.value, 10);
+    _lbPage = 0;
+    renderLb();
+  });
+  document.getElementById('lbPrevBtn').addEventListener('click', function () {
+    if (_lbPage > 0) { _lbPage--; renderLb(); }
+  });
+  document.getElementById('lbNextBtn').addEventListener('click', function () {
+    const total    = _lbData.length;
+    const pageSize = _lbPageSize === 0 ? total : _lbPageSize;
+    if (_lbPage < Math.ceil(total / pageSize) - 1) { _lbPage++; renderLb(); }
+  });
+
+  // ── Recent matches ─────────────────────────────────────────────────────────
+  periodFetch(base + '/recent?limit=20').then(r=>r.json()).then(data => {
+    const tbody = document.getElementById('recentBody');
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1rem;">No matches yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(r => {
+      const dur   = r.duration ? Math.round(r.duration / 60) + ' min' : '—';
+      const score = (r.t1_rounds || r.t2_rounds)
+        ? `<span class="score-t1">${r.t1_rounds}</span><span class="score-sep">–</span><span class="score-t2">${r.t2_rounds}</span>`
+        : '—';
+      const modeBadge = r.game_mode === 'ctf'
+        ? ' <span style="font-size:.7rem;background:var(--accent2);color:#fff;border-radius:3px;padding:1px 4px;vertical-align:middle;">CTF</span>'
+        : r.game_mode === 'dm'
+        ? ' <span style="font-size:.7rem;background:#666;color:#fff;border-radius:3px;padding:1px 4px;vertical-align:middle;">DM</span>'
+        : '';
+      return `<tr>
+        <td>${fmtDate(r.played_at)}</td>
+        <td class="num">${score}${modeBadge}</td>
+        <td class="num">${r.player_count || '—'}</td>
+        <td class="num">${fmt(r.total_kills)}</td>
+        <td class="num">${dur}</td>
+        <td style="text-align:right"><a href="/replay/${encodeURIComponent(r.path)}"
+           style="font-size:.78rem;color:var(--accent);">▶ replay</a></td>
+      </tr>`;
+    }).join('');
+  }).catch(()=>{});
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  loadLeaderboard(1);
+  loadSpatial();
+})();
+</script>
+{% endblock %}

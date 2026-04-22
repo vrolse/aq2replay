@@ -1,0 +1,415 @@
+{% extends "base.html" %}
+{% block title %}Stats Overview — AQ2{% endblock %}
+
+{% block content %}
+{% set active_stats_page = 'overview' %}
+{% include "_stats_nav.html" %}
+
+<div class="stats-kpi-grid" id="overviewKpis">
+  <div class="card kpi-card">
+    <div class="kpi-value" id="kpiMatches">—</div>
+    <div class="kpi-label help-label" title="Total matches in the selected mode and period.">Matches</div>
+  </div>
+  <div class="card kpi-card">
+    <div class="kpi-value" id="kpiPlayers">—</div>
+    <div class="kpi-label help-label" title="Distinct players seen in the selected filter.">Players</div>
+  </div>
+  <div class="card kpi-card">
+    <div class="kpi-value" id="kpiKills">—</div>
+    <div class="kpi-label help-label" title="Total kills across matching matches.">Total Kills</div>
+  </div>
+  <div class="card kpi-card">
+    <div class="kpi-value" id="kpiMaps">—</div>
+    <div class="kpi-label help-label" title="Distinct maps represented in the selected filter.">Maps</div>
+  </div>
+  <div class="card kpi-card">
+    <div class="kpi-value" id="kpiBestGame">—</div>
+    <div class="kpi-label help-label" title="Highest single-match kill count by one player.">Best Game (Kills)</div>
+  </div>
+  <div class="card kpi-card">
+    <div class="kpi-value" id="kpiDamage">—</div>
+    <div class="kpi-label help-label" title="Estimated total damage dealt in this filter.">Total Damage</div>
+  </div>
+</div>
+
+<h2 style="margin:.4rem 0 .55rem;font-size:.95rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);">Records</h2>
+<div class="stats-kpi-grid" id="recordsGrid">
+  <div class="card rec-card">
+    <div class="rec-label help-label" title="Highest kills by a single player in one match.">Most Kills</div>
+    <div class="rec-value" id="recKillsVal">—</div>
+    <div class="rec-meta" id="recKillsMeta"></div>
+  </div>
+  <div class="card rec-card">
+    <div class="rec-label help-label" title="Best single-match kill/death ratio (minimum 3 kills).">Best K/D</div>
+    <div class="rec-value" id="recKdVal">—</div>
+    <div class="rec-meta" id="recKdMeta"></div>
+  </div>
+  <div class="card rec-card">
+    <div class="rec-label help-label" title="Highest single-match accuracy (minimum 5 shots).">Best Accuracy</div>
+    <div class="rec-value" id="recAccVal">—</div>
+    <div class="rec-meta" id="recAccMeta"></div>
+  </div>
+  <div class="card rec-card">
+    <div class="rec-label help-label" title="Most damage dealt by one player in one match.">Most Damage</div>
+    <div class="rec-value" id="recDmgVal">—</div>
+    <div class="rec-meta" id="recDmgMeta"></div>
+  </div>
+  <div class="card rec-card">
+    <div class="rec-label help-label" title="Most headshot kills by one player in one match.">Most Headshots</div>
+    <div class="rec-value" id="recHsVal">—</div>
+    <div class="rec-meta" id="recHsMeta"></div>
+  </div>
+  <div class="card rec-card">
+    <div class="rec-label help-label" title="Longest match duration on record.">Longest Match</div>
+    <div class="rec-value" id="recLongVal">—</div>
+    <div class="rec-meta" id="recLongMeta"></div>
+  </div>
+</div>
+
+<div class="stats-grid-2">
+  <div class="card">
+    <div class="stats-section-head">
+      <h2>Top 10 Leaderboard</h2>
+      <a href="/stats/players">View all</a>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th class="num">#</th>
+          <th class="help-label" title="Player name.">Player</th>
+          <th class="num help-label" title="Matches played.">Games</th>
+          <th class="num help-label" title="Kills divided by deaths.">K/D</th>
+          <th class="num help-label" title="Average accuracy percentage.">Acc%</th>
+        </tr>
+      </thead>
+      <tbody id="overviewLeaderboardBody">
+        <tr><td colspan="5" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="stats-section-head">
+      <h2>10 Most Recent Matches</h2>
+      <a href="/stats/matches">View all</a>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th class="help-label" title="Match date.">Date</th>
+          <th class="help-label" title="Map played.">Map</th>
+          <th class="center help-label" title="Final round score (Team 1 - Team 2).">Score</th>
+          <th class="num help-label" title="Number of players in replay.">Players</th>
+        </tr>
+      </thead>
+      <tbody id="overviewRecentBody">
+        <tr><td colspan="4" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="stats-grid-2">
+  <div class="card">
+    <div class="stats-section-head">
+      <h2>Maps Snapshot</h2>
+      <a href="/stats/maps">View maps</a>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Map</th>
+          <th class="num help-label" title="Matches played on this map.">Matches</th>
+          <th class="num help-label" title="Average kills per match.">Avg K</th>
+        </tr>
+      </thead>
+      <tbody id="overviewMapsBody">
+        <tr><td colspan="3" class="center muted-row">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="stats-section-head">
+      <h2>Activity Snapshot</h2>
+      <a href="/stats/activity">View activity</a>
+    </div>
+    <div id="overviewActivityBars" class="activity-bars" aria-label="Weekly match activity"></div>
+    <div id="overviewActivityLegend" class="muted-note" style="margin-top:.55rem;">Loading…</div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:.7rem;">
+  <div class="stats-section-head">
+    <h2>Meta Insights</h2>
+    <a href="/stats/analytics">View analytics →</a>
+  </div>
+  <div id="aiInsights" class="insights-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.6rem;padding:.15rem 0;">
+    <span class="muted-note">Loading…</span>
+  </div>
+  <div id="aiInsightsFooter" style="display:none;margin-top:.5rem;padding-top:.4rem;border-top:1px solid var(--border);font-size:.7rem;color:var(--muted);text-align:right;"></div>
+</div>
+
+<div class="card" style="margin-top:.7rem;">
+  <div class="stats-section-head">
+    <h2>Top Rivalries</h2>
+    <a href="/h2h">Head-to-head →</a>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Player with alphabetically first name in this pairing.">Player 1</th>
+        <th></th>
+        <th class="help-label" title="Player with alphabetically second name in this pairing.">Player 2</th>
+        <th class="num help-label" title="Total kills between these two players.">Encounters</th>
+        <th class="num help-label" title="How balanced the rivalry is (100 = perfectly even score).">Balance</th>
+        <th class="num help-label" title="Combined score of encounter frequency and balance.">Rivalry Index</th>
+      </tr>
+    </thead>
+    <tbody id="rivalriesBody">
+      <tr><td colspan="6" class="center muted-row">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  var S = window.AQ2Stats;
+  if (!S) return;
+
+  var filters = S.bindFilters();
+  S.initStatusBadge({ badgeId: 'statusBadge', rebuildBtnId: 'rebuildBtn' });
+
+  function setText(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function playerAnchor(name) {
+    return '<a href="/player/' + encodeURIComponent(name) + '">' + S.escHtml(name) + '</a>';
+  }
+
+  S.fetchJson('/api/stats/summary', filters).then(function (d) {
+    setText('kpiMatches', S.fmtNum(d.total_matches));
+    setText('kpiPlayers', S.fmtNum(d.total_players));
+    setText('kpiKills', S.fmtNum(d.total_kills));
+    setText('kpiMaps', S.fmtNum(d.total_maps));
+    setText('kpiBestGame', S.fmtNum(d.best_game_kills));
+    setText('kpiDamage', S.fmtNum(d.total_damage));
+  }).catch(function () {});
+
+  S.fetchJson('/api/stats/leaderboard?min_games=5', filters).then(function (rows) {
+    var body = document.getElementById('overviewLeaderboardBody');
+    if (!body) return;
+    var sorted = (rows || []).slice();
+    sorted.forEach(function (r) {
+      if (r.kd == null) r.kd = r.deaths ? (r.kills || 0) / r.deaths : (r.kills || 0);
+    });
+    sorted.sort(function (a, b) { return (b.kd || 0) - (a.kd || 0); });
+    var top = sorted.slice(0, 10);
+    if (!top.length) {
+      body.innerHTML = '<tr><td colspan="5" class="center muted-row">No data.</td></tr>';
+      return;
+    }
+    body.innerHTML = top.map(function (r, idx) {
+      return '<tr>' +
+        '<td class="num">' + (idx + 1) + '</td>' +
+        '<td>' + playerAnchor(r.name || 'Unknown') + '</td>' +
+        '<td class="num">' + S.fmtNum(r.games) + '</td>' +
+        '<td class="num">' + S.fmtNum(r.kd, 2) + '</td>' +
+        '<td class="num">' + S.fmtPct(r.avg_acc, 1) + '</td>' +
+      '</tr>';
+    }).join('');
+  }).catch(function () {});
+
+  S.fetchJson('/api/stats/recent?limit=10', filters).then(function (rows) {
+    var body = document.getElementById('overviewRecentBody');
+    if (!body) return;
+    if (!rows || !rows.length) {
+      body.innerHTML = '<tr><td colspan="4" class="center muted-row">No matches found.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function (r) {
+      var replayUrl = '/replay/' + encodeURI(r.path || '');
+      return '<tr>' +
+        '<td>' + S.fmtDate(r.played_at) + '</td>' +
+        '<td><a href="' + replayUrl + '">' + S.escHtml(r.map || 'unknown') + '</a></td>' +
+        '<td class="center"><span class="score-t1">' + S.fmtNum(r.t1_rounds) + '</span><span class="score-sep">-</span><span class="score-t2">' + S.fmtNum(r.t2_rounds) + '</span></td>' +
+        '<td class="num">' + S.fmtNum(r.player_count) + '</td>' +
+      '</tr>';
+    }).join('');
+  }).catch(function () {});
+
+  S.fetchJson('/api/stats/maps', filters).then(function (rows) {
+    var body = document.getElementById('overviewMapsBody');
+    if (!body) return;
+    var top = (rows || []).slice(0, 6);
+    if (!top.length) {
+      body.innerHTML = '<tr><td colspan="3" class="center muted-row">No map data.</td></tr>';
+      return;
+    }
+    body.innerHTML = top.map(function (r) {
+      var mapUrl = '/map/' + encodeURIComponent(r.map || '');
+      return '<tr>' +
+        '<td><a href="' + mapUrl + '">' + S.escHtml(r.map || 'unknown') + '</a></td>' +
+        '<td class="num">' + S.fmtNum(r.matches) + '</td>' +
+        '<td class="num">' + S.fmtNum(r.avg_kills, 1) + '</td>' +
+      '</tr>';
+    }).join('');
+  }).catch(function () {});
+
+  function fillRec(valId, metaId, row, valueStr) {
+    var valEl  = document.getElementById(valId);
+    var metaEl = document.getElementById(metaId);
+    if (!valEl || !metaEl) return;
+    if (!row) {
+      valEl.textContent = '—';
+      metaEl.innerHTML = '<span class="muted-note">No data.</span>';
+      return;
+    }
+    valEl.textContent = valueStr || S.fmtNum(row.value);
+
+    var lines = [];
+    if (row.name) {
+      lines.push('<span class="rec-line">' + playerAnchor(row.name) +
+        (row.map ? ' <span style="color:var(--muted)">on ' + S.escHtml(row.map) + '</span>' : '') +
+        '</span>');
+    } else if (row.map) {
+      lines.push('<span class="rec-line"><strong>' + S.escHtml(row.map) + '</strong></span>');
+    }
+    if (row.played_at) {
+      lines.push('<span class="rec-line" style="color:var(--muted)">' + S.fmtDate(row.played_at) + '</span>');
+    }
+    if (row.path) {
+      lines.push('<span class="rec-line"><a href="/replay/' + encodeURI(row.path) + '">&#9654; Open replay</a></span>');
+    }
+    metaEl.innerHTML = lines.join('');
+  }
+
+  S.fetchJson('/api/stats/records', filters).then(function (d) {
+    fillRec('recKillsVal', 'recKillsMeta', d.most_kills,    S.fmtNum(d.most_kills ? d.most_kills.value : null));
+    fillRec('recKdVal',    'recKdMeta',    d.best_kd,       d.best_kd ? S.fmtNum(d.best_kd.value, 2) : '—');
+    fillRec('recAccVal',   'recAccMeta',   d.best_acc,      d.best_acc ? S.fmtPct(d.best_acc.value, 1) : '—');
+    fillRec('recDmgVal',   'recDmgMeta',   d.most_damage,   S.fmtNum(d.most_damage ? d.most_damage.value : null));
+    fillRec('recHsVal',    'recHsMeta',    d.most_hs,       S.fmtNum(d.most_hs ? d.most_hs.value : null));
+    fillRec('recLongVal',  'recLongMeta',  d.longest_match, d.longest_match ? S.fmtNum(d.longest_match.value, 1) + ' min' : '—');
+  }).catch(function () {
+    ['Kills','Kd','Acc','Dmg','Hs','Long'].forEach(function (sfx) {
+      var v = document.getElementById('rec' + sfx + 'Val');
+      var m = document.getElementById('rec' + sfx + 'Meta');
+      if (v) v.textContent = '—';
+      if (m) m.innerHTML = '<span class="muted-note">Failed to load.</span>';
+    });
+  });
+
+  S.fetchJson('/api/stats/activity', filters).then(function (rows) {
+    var bars = document.getElementById('overviewActivityBars');
+    var legend = document.getElementById('overviewActivityLegend');
+    if (!bars || !legend) return;
+
+    var data = (rows || []).slice(-16);
+    if (!data.length) {
+      bars.innerHTML = '<div class="muted-note">No activity data.</div>';
+      legend.textContent = 'No weeks in current filter.';
+      return;
+    }
+
+    var max = data.reduce(function (m, r) {
+      return Math.max(m, Number(r.matches || 0));
+    }, 1);
+
+    bars.innerHTML = data.map(function (r) {
+      var h = Math.max(6, Math.round((Number(r.matches || 0) / max) * 62));
+      return '<div class="activity-bar" style="height:' + h + 'px" title="' +
+        S.escHtml(r.week || '') + ': ' + S.fmtNum(r.matches) + ' matches, ' +
+        S.fmtNum(r.kills) + ' kills"></div>';
+    }).join('');
+
+    var first = data[0].week || '—';
+    var last = data[data.length - 1].week || '—';
+    legend.textContent = first + ' to ' + last + ' • ' + data.length + ' weeks';
+  }).catch(function () {});
+
+  S.fetchJson('/api/stats/insights?limit=6', filters).then(function (resp) {
+    var el = document.getElementById('aiInsights');
+    var footer = document.getElementById('aiInsightsFooter');
+    if (!el) return;
+    var items = Array.isArray(resp) ? resp : (resp && resp.insights) || [];
+    var generator = resp && resp.generator;
+    if (!items.length) { el.innerHTML = '<span class="muted-note">No insights available.</span>'; return; }
+
+    var catStyle = {
+      weapon_meta:      { icon: '\u2694', bg: 'rgba(232,93,93,.12)',  accent: '#e85d5d' },
+      opening_control:  { icon: '\u25CE', bg: 'rgba(91,141,238,.12)', accent: '#5b8dee' },
+      tempo:            { icon: '\u23F1', bg: 'rgba(255,180,50,.12)', accent: '#e8a832' },
+      match_flow:       { icon: '\u2261', bg: 'rgba(10,165,143,.12)', accent: '#0aa58f' },
+      playstyle:        { icon: '\u2660', bg: 'rgba(107,98,214,.12)', accent: '#6b62d6' },
+      ranking:          { icon: '\u2605', bg: 'rgba(255,215,0,.14)',  accent: '#d4a917' },
+    };
+    var defaultCat =      { icon: '\u2726', bg: 'rgba(122,127,154,.1)', accent: 'var(--muted)' };
+
+    el.innerHTML = items.map(function (it) {
+      var title = it.title || '';
+      var detail = it.detail || '';
+      var cat = it.category || 'insight';
+      var cs = catStyle[cat] || defaultCat;
+      var conf = it.confidence;
+      var confBar = '';
+      if (conf != null && conf > 0) {
+        confBar = '<div style="margin-top:.4rem;display:flex;align-items:center;gap:.35rem;">' +
+          '<div style="flex:1;height:3px;border-radius:2px;background:var(--border);overflow:hidden;">' +
+            '<div style="width:' + Math.min(100, conf) + '%;height:100%;border-radius:2px;background:' + cs.accent + ';opacity:.6;"></div>' +
+          '</div>' +
+          '<span style="font-size:.62rem;color:var(--muted);">' + conf + '%</span>' +
+        '</div>';
+      }
+      return '<div style="background:' + cs.bg + ';border:1px solid color-mix(in srgb,' + cs.accent + ' 20%,transparent);' +
+        'border-radius:var(--radius);padding:.6rem .7rem;display:flex;flex-direction:column;">' +
+        '<div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem;">' +
+          '<span style="font-size:1rem;line-height:1;flex-shrink:0;">' + cs.icon + '</span>' +
+          '<span class="badge" style="background:color-mix(in srgb,' + cs.accent + ' 18%,transparent);color:' + cs.accent + ';text-transform:capitalize;font-size:.62rem;">' + S.escHtml(cat.replace(/_/g, ' ')) + '</span>' +
+        '</div>' +
+        (title ? '<div style="font-size:.82rem;font-weight:600;line-height:1.3;margin-bottom:.2rem;">' + S.escHtml(title) + '</div>' : '') +
+        (detail ? '<div style="font-size:.75rem;color:var(--muted);line-height:1.4;flex:1;">' + S.escHtml(detail) + '</div>' : '') +
+        confBar +
+      '</div>';
+    }).join('');
+
+    if (footer && generator) {
+      footer.style.display = 'block';
+      footer.textContent = generator === 'gemini' ? 'Generated by Gemini' : 'Heuristic analysis';
+    }
+  }).catch(function () {
+    var el = document.getElementById('aiInsights');
+    if (el) el.innerHTML = '<span class="muted-note">Insights unavailable.</span>';
+  });
+
+  S.fetchJson('/api/h2h/rivalries?limit=8', filters).then(function (rows) {
+    var body = document.getElementById('rivalriesBody');
+    if (!body) return;
+    if (!rows || !rows.length) {
+      body.innerHTML = '<tr><td colspan="6" class="center muted-row">No rivalry data yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function (r) {
+      var h2hUrl = '/h2h?p1=' + encodeURIComponent(r.p1 || '') + '&p2=' + encodeURIComponent(r.p2 || '');
+      return '<tr>' +
+        '<td><a href="/player/' + encodeURIComponent(r.p1 || '') + '">' + S.escHtml(r.p1 || '') + '</a>' +
+          ' <span class="muted-note">(' + S.fmtNum(r.p1_kills) + ')</span></td>' +
+        '<td class="center"><a href="' + h2hUrl + '" style="font-size:.72rem;color:var(--muted)">vs</a></td>' +
+        '<td><a href="/player/' + encodeURIComponent(r.p2 || '') + '">' + S.escHtml(r.p2 || '') + '</a>' +
+          ' <span class="muted-note">(' + S.fmtNum(r.p2_kills) + ')</span></td>' +
+        '<td class="num">' + S.fmtNum(r.encounters) + '</td>' +
+        '<td class="num">' + (r.balance_score != null ? parseFloat(r.balance_score).toFixed(1) + '%' : '—') + '</td>' +
+        '<td class="num">' + (r.rivalry_index != null ? parseFloat(r.rivalry_index).toFixed(1) : '—') + '</td>' +
+      '</tr>';
+    }).join('');
+  }).catch(function () {});
+})();
+</script>
+{% endblock %}

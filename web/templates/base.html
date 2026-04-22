@@ -5,18 +5,165 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}AQ2 Stats{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+  .map-thumb-modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.78);
+    z-index: 1400;
+  }
+  .map-thumb-modal.is-open { display: flex; }
+  .map-thumb-modal__dialog {
+    position: relative;
+    max-width: min(1100px, 96vw);
+    max-height: calc(100vh - 2rem);
+  }
+  .map-thumb-modal__image {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 3rem);
+    border-radius: var(--radius);
+  }
+  .map-thumb-modal__close {
+    position: absolute;
+    top: .45rem;
+    right: .45rem;
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid rgba(255,255,255,.4);
+    border-radius: 999px;
+    background: rgba(0,0,0,.5);
+    color: #fff;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  body.map-thumb-modal-open { overflow: hidden; }
+  </style>
 </head>
 <body>
 <nav class="navbar">
   <a class="brand" href="/">AQ2 Stats</a>
   <ul>
     <li><a href="/">Matches</a></li>
+    <li><a href="/stats">Stats</a></li>
+    <li><a href="/rankings">Rankings</a></li>
+    <li><a href="/h2h" title="Head-to-head player comparison">H2H</a></li>
+    <li style="position:relative;">
+      <input id="playerSearch" type="text" placeholder="Search player…" autocomplete="off"
+        style="background:var(--surface);color:var(--text);border:1px solid var(--border);
+               border-radius:var(--radius);padding:.25rem .6rem;font-size:.82rem;width:150px;
+               vertical-align:middle;">
+      <div id="searchDropdown" style="display:none;position:absolute;top:calc(100% + 4px);right:0;
+           background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+           min-width:200px;max-height:280px;overflow-y:auto;z-index:100;
+           box-shadow:0 4px 16px rgba(0,0,0,.5);font-size:.85rem;"></div>
+    </li>
   </ul>
 </nav>
+<script>
+(function() {
+  var inp = document.getElementById('playerSearch');
+  var drop = document.getElementById('searchDropdown');
+  var timer = null;
+
+  function hideDrop() { drop.style.display = 'none'; drop.innerHTML = ''; }
+
+  inp.addEventListener('input', function() {
+    clearTimeout(timer);
+    var q = this.value.trim();
+    if (q.length < 2) { hideDrop(); return; }
+    timer = setTimeout(function() {
+      fetch('/api/players/search?q=' + encodeURIComponent(q))
+        .then(function(r) { return r.json(); })
+        .then(function(rows) {
+          if (!rows.length) { hideDrop(); return; }
+          drop.innerHTML = rows.map(function(r) {
+            return '<a href="/player/' + encodeURIComponent(r.name) + '"' +
+              ' style="display:block;padding:.4rem .75rem;color:var(--text);text-decoration:none;' +
+              'border-bottom:1px solid var(--border);"' +
+              ' onmouseenter="this.style.background=\'var(--surface)\'"' +
+              ' onmouseleave="this.style.background=\'\'">' +
+              r.name.replace(/&/g,'&amp;').replace(/</g,'&lt;') +
+              '<span style="float:right;color:var(--muted);font-size:.75rem;">' + r.games + ' games</span>' +
+              '</a>';
+          }).join('');
+          drop.style.display = 'block';
+        }).catch(function() { hideDrop(); });
+    }, 220);
+  });
+
+  inp.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { hideDrop(); inp.value = ''; }
+    if (e.key === 'Enter') {
+      var first = drop.querySelector('a');
+      if (first) { window.location.href = first.href; }
+    }
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!inp.contains(e.target) && !drop.contains(e.target)) hideDrop();
+  });
+})();
+</script>
+<div id="globalMapThumbModal" class="map-thumb-modal" aria-hidden="true">
+  <div class="map-thumb-modal__dialog" role="dialog" aria-modal="true" aria-label="Map thumbnail preview">
+    <button id="globalMapThumbModalClose" type="button" class="map-thumb-modal__close" aria-label="Close thumbnail preview">×</button>
+    <img id="globalMapThumbModalImg" class="map-thumb-modal__image" alt="Map thumbnail preview">
+  </div>
+</div>
+<script>
+(function() {
+  var modal = document.getElementById('globalMapThumbModal');
+  var modalImg = document.getElementById('globalMapThumbModalImg');
+  var closeBtn = document.getElementById('globalMapThumbModalClose');
+  if (!modal || !modalImg || !closeBtn) return;
+
+  function openModal(src, altText) {
+    if (!src) return;
+    modalImg.src = src;
+    modalImg.alt = altText || 'Map thumbnail preview';
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('map-thumb-modal-open');
+  }
+
+  function closeModal() {
+    modal.classList.remove('is-open');
+    modal.setAttribute('aria-hidden', 'true');
+    modalImg.removeAttribute('src');
+    document.body.classList.remove('map-thumb-modal-open');
+  }
+
+  document.addEventListener('click', function(event) {
+    var target = event.target;
+    if (!(target instanceof Element)) return;
+    var thumb = target.closest('img[data-map-thumb-modal]');
+    if (!thumb) return;
+    event.preventDefault();
+    openModal(thumb.currentSrc || thumb.src, thumb.alt || 'Map thumbnail preview');
+  });
+
+  closeBtn.addEventListener('click', closeModal);
+  modal.addEventListener('click', function(event) {
+    if (event.target === modal) closeModal();
+  });
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' && modal.classList.contains('is-open')) {
+      closeModal();
+    }
+  });
+})();
+</script>
 <main class="container">
 {% block content %}{% endblock %}
 </main>
 <script src="{{ url_for('static', filename='js/viewer.js') }}"></script>
+<script src="{{ url_for('static', filename='js/stats-lite.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

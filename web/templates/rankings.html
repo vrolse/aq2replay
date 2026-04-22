@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% block title %}Rankings — AQ2{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;gap:.7rem;flex-wrap:wrap;margin-bottom:1rem;">
+  <h1 style="font-size:1.35rem;font-weight:700;">Rankings</h1>
+  <div style="display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;">
+    <label style="font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:.35rem;">
+      Mode:
+      <select id="modeFilter" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+        <option value="teamplay" selected>Teamplay</option>
+        <option value="team_deathmatch">Team Deathmatch</option>
+        <option value="domination">Domination</option>
+        <option value="espionage">Espionage</option>
+        <option value="tourney">Tourney</option>
+        <option value="deathmatch">Deathmatch</option>
+        <option value="team_modes">All Team Modes</option>
+        <option value="dm_modes">All DM Modes</option>
+        <option value="all">All Modes</option>
+      </select>
+    </label>
+    <label style="font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:.35rem;">
+      Period:
+      <select id="periodFilter" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+        <option value="this_week">This Week</option>
+        <option value="last_week">Last Week</option>
+        <option value="this_month">This Month</option>
+        <option value="last_month">Last Month</option>
+        <option value="this_year" selected>This Year</option>
+        <option value="last_year">Last Year</option>
+        <option value="all">All Time</option>
+      </select>
+    </label>
+    <label style="font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:.35rem;">
+      Min games:
+      <select id="minGames" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:3px;padding:.15rem .4rem;font-size:.78rem;">
+        <option value="3">3</option>
+        <option value="5" selected>5</option>
+        <option value="10">10</option>
+        <option value="20">20</option>
+      </select>
+    </label>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.7rem;margin-bottom:1rem;">
+  <div class="card" style="text-align:center;padding:.85rem .6rem;">
+    <div class="stat-big" id="rk-players">—</div>
+    <div class="stat-label help-label" title="Players included in the ranking list for the current filter.">Ranked Players</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.85rem .6rem;">
+    <div class="stat-big" id="rk-avg">—</div>
+    <div class="stat-label help-label" title="Average rating across all ranked players in the current filter.">Avg Rating</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.85rem .6rem;">
+    <div class="stat-big" id="rk-rd">—</div>
+    <div class="stat-label help-label" title="Average rating uncertainty (RD). Lower means ratings are more stable.">Avg Uncertainty</div>
+  </div>
+</div>
+
+<div class="card" style="padding:0;overflow-x:auto;margin-bottom:.9rem;">
+  <table id="rankTable">
+    <thead>
+      <tr>
+        <th class="num help-label" title="Ranking position.">#</th>
+        <th class="help-label" title="Player name.">Player</th>
+        <th class="num help-label" title="Current skill rating estimate.">Rating</th>
+        <th class="num help-label" title="Rating deviation (uncertainty). Lower is more confident.">RD</th>
+        <th class="num help-label" title="Matches counted in this ranking window.">Games</th>
+        <th class="num help-label" title="Match win percentage in this ranking window.">Win%</th>
+        <th class="num help-label" title="Average recent rating delta. Positive means climbing.">Trend</th>
+        <th class="num help-label" title="Stability score from match-to-match performance.">Consistency</th>
+        <th class="num help-label" title="Performance spread. Lower usually means steadier results.">Variance</th>
+        <th class="num help-label" title="Matches in this filter played versus high-rated opposition.">High-Skill</th>
+      </tr>
+    </thead>
+    <tbody id="rankBody">
+      <tr><td colspan="10" style="text-align:center;color:var(--muted);padding:1rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="padding:.85rem 1rem;">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem;">
+    <div style="font-size:.88rem;font-weight:700;" id="histTitle">Select a player for rating history</div>
+    <a id="histPlayerLink" href="#" style="font-size:.78rem;color:var(--accent);display:none;">Open player profile</a>
+  </div>
+  <div id="histChart" style="display:flex;align-items:flex-end;gap:3px;height:90px;overflow-x:auto;"></div>
+  <div id="histLegend" style="font-size:.75rem;color:var(--muted);margin-top:.35rem;">No player selected.</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.stat-big { font-size:1.45rem;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums; }
+.stat-label { font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:.2rem; }
+</style>
+<script>
+(function () {
+  'use strict';
+
+  const modeEl = document.getElementById('modeFilter');
+  const periodEl = document.getElementById('periodFilter');
+  const minGamesEl = document.getElementById('minGames');
+  const rankBody = document.getElementById('rankBody');
+  const histTitle = document.getElementById('histTitle');
+  const histChart = document.getElementById('histChart');
+  const histLegend = document.getElementById('histLegend');
+  const histPlayerLink = document.getElementById('histPlayerLink');
+
+  const modeAliases = { tdm: 'team_deathmatch', dm: 'deathmatch', all_team_modes: 'team_modes', all_dm_modes: 'dm_modes' };
+  const periodAliases = {
+    alltime: 'all', all_time: 'all', thisweek: 'this_week', lastweek: 'last_week',
+    thismonth: 'this_month', lastmonth: 'last_month', thisyear: 'this_year', lastyear: 'last_year'
+  };
+
+  const params = new URLSearchParams(window.location.search);
+  const modeRaw = String(params.get('mode') || 'teamplay').toLowerCase();
+  const periodRaw = String(params.get('period') || 'this_year').toLowerCase();
+  const minRaw = parseInt(params.get('min_games') || '5', 10);
+
+  const currentMode = modeAliases[modeRaw] || modeRaw;
+  const currentPeriod = periodAliases[periodRaw] || periodRaw;
+
+  modeEl.value = currentMode;
+  periodEl.value = currentPeriod;
+  if ([3, 5, 10, 20].includes(minRaw)) minGamesEl.value = String(minRaw);
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function fmt(n, dec) {
+    if (n == null || n === '') return '—';
+    const v = parseFloat(n);
+    if (Number.isNaN(v)) return '—';
+    return dec != null ? v.toFixed(dec) : v.toLocaleString();
+  }
+  function pct(n) {
+    if (n == null || n === '') return '—';
+    const v = parseFloat(n);
+    if (Number.isNaN(v)) return '—';
+    return v.toFixed(1) + '%';
+  }
+
+  function syncUrl() {
+    const p = new URLSearchParams(window.location.search);
+    if (modeEl.value === 'teamplay') p.delete('mode');
+    else p.set('mode', modeEl.value);
+    if (periodEl.value === 'this_year') p.delete('period');
+    else p.set('period', periodEl.value);
+    if (minGamesEl.value === '5') p.delete('min_games');
+    else p.set('min_games', minGamesEl.value);
+    const qs = p.toString();
+    history.replaceState(null, '', qs ? ('?' + qs) : location.pathname);
+  }
+
+  function fetchStats(path) {
+    const sep = path.includes('?') ? '&' : '?';
+    return fetch(path + sep +
+      'mode=' + encodeURIComponent(modeEl.value) +
+      '&period=' + encodeURIComponent(periodEl.value)
+    );
+  }
+
+  function renderHistory(playerName) {
+    if (!playerName) return;
+    fetchStats('/api/player/' + encodeURIComponent(playerName) + '/rating-history?limit=80')
+      .then(r => r.json())
+      .then(data => {
+        const hist = data.history || [];
+        histTitle.textContent = data.player ? (data.player + ' Rating History') : 'Rating History';
+        if (data.player) {
+          histPlayerLink.style.display = '';
+          histPlayerLink.href = '/player/' + encodeURIComponent(data.player);
+        } else {
+          histPlayerLink.style.display = 'none';
+        }
+        if (!hist.length) {
+          histChart.innerHTML = '<span style="color:var(--muted);font-size:.8rem;">No history data.</span>';
+          histLegend.textContent = 'No rating points in selected filter.';
+          return;
+        }
+        const minR = Math.min(...hist.map(h => h.rating));
+        const maxR = Math.max(...hist.map(h => h.rating));
+        const span = Math.max(1, maxR - minR);
+        histChart.innerHTML = hist.slice(-60).map(h => {
+          const hPx = Math.max(5, Math.round(((h.rating - minR) / span) * 84));
+          const c = h.delta >= 0 ? 'var(--green)' : 'var(--accent2)';
+          return `<div title="${esc(String(h.map || ''))}: ${fmt(h.rating,1)} (Δ ${fmt(h.delta,1)})"
+            style="flex:0 0 auto;min-width:6px;width:6px;height:${hPx}px;border-radius:2px 2px 0 0;background:${c};opacity:.82;"></div>`;
+        }).join('');
+        const cur = hist[hist.length - 1];
+        histLegend.textContent = `Current ${fmt(cur.rating, 1)} ± ${fmt(cur.uncertainty, 1)} • ${hist.length} matches tracked in window`;
+      })
+      .catch(() => {
+        histChart.innerHTML = '<span style="color:var(--accent2);font-size:.8rem;">Failed to load history.</span>';
+      });
+  }
+
+  function loadRankings() {
+    syncUrl();
+    rankBody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:1rem;">Loading…</td></tr>';
+    fetchStats('/api/stats/ratings?limit=120&min_games=' + encodeURIComponent(minGamesEl.value))
+      .then(r => r.json())
+      .then(data => {
+        const rows = data.leaderboard || [];
+        const sum = data.summary || {};
+        document.getElementById('rk-players').textContent = fmt(sum.players);
+        document.getElementById('rk-avg').textContent = fmt(sum.avg_rating, 1);
+        document.getElementById('rk-rd').textContent = fmt(sum.avg_uncertainty, 1);
+
+        if (!rows.length) {
+          rankBody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:1rem;">No ranking data for this filter.</td></tr>';
+          histTitle.textContent = 'No player selected';
+          histChart.innerHTML = '';
+          histLegend.textContent = 'Try lowering min games or widening period.';
+          return;
+        }
+
+        rankBody.innerHTML = rows.map(r => `<tr data-player="${esc(r.name)}" style="cursor:pointer;">
+          <td class="num">${fmt(r.rank)}</td>
+          <td><a href="/player/${encodeURIComponent(r.name)}" style="color:var(--text);font-weight:600;">${esc(r.name)}</a></td>
+          <td class="num">${fmt(r.rating, 1)}</td>
+          <td class="num">${fmt(r.uncertainty, 1)}</td>
+          <td class="num">${fmt(r.games)}</td>
+          <td class="num">${pct(r.win_rate)}</td>
+          <td class="num" style="color:${parseFloat(r.trend || 0) >= 0 ? 'var(--green)' : 'var(--accent2)'};">${fmt(r.trend, 2)}</td>
+          <td class="num">${fmt(r.consistency_score, 1)}</td>
+          <td class="num">${fmt(r.skill_variance, 2)}</td>
+          <td class="num">${fmt(r.high_skill_matches)}</td>
+        </tr>`).join('');
+
+        const first = rows[0] && rows[0].name;
+        if (first) renderHistory(first);
+      })
+      .catch(() => {
+        rankBody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--accent2);padding:1rem;">Failed to load ratings.</td></tr>';
+      });
+  }
+
+  document.getElementById('rankTable').addEventListener('click', function (event) {
+    const row = event.target && event.target.closest('tr[data-player]');
+    if (!row) return;
+    const p = row.getAttribute('data-player');
+    if (p) renderHistory(p);
+  });
+
+  modeEl.addEventListener('change', loadRankings);
+  periodEl.addEventListener('change', loadRankings);
+  minGamesEl.addEventListener('change', loadRankings);
+
+  loadRankings();
+})();
+</script>
+{% endblock %}
