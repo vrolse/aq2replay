@@ -1,0 +1,46 @@
+version: '3.8'
+services:
+  aq2replay:
+    build: .
+    container_name: aq2replay_example
+    command: >
+      sh -c "gunicorn --chdir /app/web --bind 0.0.0.0:5000 \
+      --workers ${GUNICORN_WORKERS:-1} \
+      --threads ${GUNICORN_THREADS:-8} \
+      --timeout ${GUNICORN_TIMEOUT:-180} \
+      --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT:-30} \
+      --access-logfile - --error-logfile - app:app"
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_DEBUG=${FLASK_DEBUG}
+      - TZ=${TZ}
+      - PROXY_FIX_ENABLED=${PROXY_FIX_ENABLED}
+      - ENABLE_HSTS=${ENABLE_HSTS}
+      - API_BEARER_AUTH_ENABLED=${API_BEARER_AUTH_ENABLED}
+      - API_BEARER_HEADER=${API_BEARER_HEADER}
+      - API_BEARER_SCOPE=${API_BEARER_SCOPE}
+      - API_RATE_LIMIT_ENABLED=${API_RATE_LIMIT_ENABLED}
+      - STATS_REINDEX_API_ENABLED=${STATS_REINDEX_API_ENABLED}
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS}
+      - GUNICORN_THREADS=${GUNICORN_THREADS}
+      - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT}
+      - GUNICORN_GRACEFUL_TIMEOUT=${GUNICORN_GRACEFUL_TIMEOUT}
+      - ASSET_BASE_URL=${ASSET_BASE_URL}
+      - LIVE_PRESET_PASSWORD=${LIVE_PRESET_PASSWORD}
+      - STATS_DB_PATH=${STATS_DB_PATH}
+      - STATS_DB_FALLBACK_PATH=${STATS_DB_FALLBACK_PATH}
+      - STATS_PREWARM_SCOPE=${STATS_PREWARM_SCOPE}
+      - STATS_PREWARM_TOP_WEAPONS=${STATS_PREWARM_TOP_WEAPONS}
+      - STATS_PREWARM_TOP_PLAYERS=${STATS_PREWARM_TOP_PLAYERS}
+      - STATS_PREWARM_TOP_MAPS=${STATS_PREWARM_TOP_MAPS}
+      - STATS_PREWARM_TOP_H2H=${STATS_PREWARM_TOP_H2H}
+      - STATS_PREWARM_INCLUDE_GEMINI=${STATS_PREWARM_INCLUDE_GEMINI}
+      - AI_INSIGHTS_PROVIDER=${AI_INSIGHTS_PROVIDER}
+      - GEMINI_MODEL=${GEMINI_MODEL}
+      - GEMINI_TIMEOUT_SECONDS=${GEMINI_TIMEOUT_SECONDS}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./mvd2:/app/mvd2:ro
+      - ./bsp:/app/bsp:ro
+      - ./colormap.pcx:/app/colormap.pcx:ro
