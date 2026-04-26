@@ -1,3 +1,8 @@
+# Secrets and personal configuration — use .env.example as template
+.env
+docker-compose.yml
+docker-compose.local.yml
+
 # Demo files — private match data
 mvd2/
 
@@ -5,15 +10,21 @@ mvd2/
 bsp/
 textures/
 colormap.pcx
+players/
+models/
 
-# Generated topview PNG cache
+# Generated cache — re-created at runtime
 cache/
+
+# SQLite database files
+*.db
+*.db-wal
+*.db-shm
 
 # Python
 venv/
+.venv/
 __pycache__/
-web/__pycache__/
-web/parsers/__pycache__/
 *.pyc
 *.pyo
 *.pyd
@@ -25,4 +36,3 @@ Thumbs.db
 # Editor noise
 .vscode/
 *.swp
-.aqtion_source/

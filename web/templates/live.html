@@ -109,6 +109,21 @@
     border:1px solid var(--border);
   }
   .canvas-wrap-live canvas { display:block; width:100%; height:600px; }
+
+  .live-delay-overlay {
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(10,13,20,.88); backdrop-filter:blur(3px);
+    z-index:10; text-align:center;
+  }
+  .live-delay-box {
+    display:flex; flex-direction:column; gap:.7rem; align-items:center;
+    padding:2rem 2.5rem;
+  }
+  .live-delay-title { font-size:1.05rem; font-weight:700; color:var(--text); }
+  .live-delay-msg   { font-size:.82rem; color:var(--muted); max-width:270px; line-height:1.5; }
+  .live-delay-num   { font-size:2.8rem; font-weight:900; color:#e6c34d; font-variant-numeric:tabular-nums; line-height:1; }
+  .live-delay-bar   { width:220px; height:4px; background:rgba(255,255,255,.12); border-radius:2px; overflow:hidden; }
+  .live-delay-bar-fill { height:100%; background:#e6c34d; border-radius:2px; width:0%; transition:width .35s linear; }
   .canvas-overlay {
     position:absolute; top:.55rem; right:.6rem; display:flex; gap:.4rem;
     background:rgba(0,0,0,.55); padding:.3rem .55rem; border-radius:var(--radius);
@@ -160,6 +175,15 @@
       <canvas id="liveCanvas" width="1024" height="600"></canvas>
       <!-- 3D iframe — hidden until toggle -->
       <iframe id="live3dFrame" style="display:none;position:absolute;inset:0;width:100%;height:100%;border:none;" allowfullscreen></iframe>
+      <!-- Anti-cheat delay countdown — shown until first real snapshot arrives -->
+      <div id="liveDelayOverlay" class="live-delay-overlay" style="display:none;">
+        <div class="live-delay-box">
+          <div class="live-delay-title">⏱ Stream Delayed</div>
+          <div class="live-delay-msg">This stream is delayed by <b id="liveDelaySec">60</b>s to prevent spectator cheating during matches.</div>
+          <div class="live-delay-num" id="liveDelayCountdown">—</div>
+          <div class="live-delay-bar"><div class="live-delay-bar-fill" id="liveDelayBarFill"></div></div>
+        </div>
+      </div>
       <div class="canvas-overlay">
         <button id="btnWireframe" style="background:transparent;color:inherit;border:1px solid #555;border-radius:4px;padding:.15rem .5rem;cursor:pointer;font-size:.72rem;">🗂 Wire</button>
         <button id="btnTopview"   style="background:transparent;color:inherit;border:1px solid #555;border-radius:4px;padding:.15rem .5rem;cursor:pointer;font-size:.72rem;">🗺 Map</button>
@@ -241,6 +265,33 @@
 
   let evtSource = null;
   let lastSnapshot = null;
+
+  // ── delay overlay ───────────────────────────────────────────────────────────
+  let _delayTimer = null;
+  function showDelayOverlay(delaySec) {
+    const overlay  = document.getElementById('liveDelayOverlay');
+    const numEl    = document.getElementById('liveDelayCountdown');
+    const barEl    = document.getElementById('liveDelayBarFill');
+    const secLabel = document.getElementById('liveDelaySec');
+    secLabel.textContent = Math.round(delaySec);
+    overlay.style.display = 'flex';
+    clearInterval(_delayTimer);
+    const start = Date.now();
+    function tick() {
+      const elapsed   = (Date.now() - start) / 1000;
+      const remaining = Math.max(0, delaySec - elapsed);
+      numEl.textContent = Math.ceil(remaining) + 's';
+      barEl.style.width = Math.min(100, (elapsed / delaySec) * 100).toFixed(1) + '%';
+      if (remaining <= 0) clearInterval(_delayTimer);
+    }
+    tick();
+    _delayTimer = setInterval(tick, 250);
+  }
+  function hideDelayOverlay() {
+    clearInterval(_delayTimer);
+    document.getElementById('liveDelayOverlay').style.display = 'none';
+  }
+
   let geoCache = {};        // mapName → geo
   let topviewCache = {};    // mapName → {img, params} (img is a <canvas>)
   let currentMapGeo = null;
@@ -399,18 +450,25 @@
   // ── snapshot handler ────────────────────────────────────────────────────────
   function handleSnapshot(snap) {
     if (!snap) return;
+    if (snap.type === 'waiting') {
+      showDelayOverlay(snap.delay_sec || 60);
+      return;
+    }
     if (snap.type === 'error') {
+      hideDelayOverlay();
       showError(snap.error || 'unknown stream error');
       setStatus('error', 'stream error');
       return;
     }
     if (snap.type === 'disconnect') {
+      hideDelayOverlay();
       setStatus('', 'stream closed');
       disconnect(true);
       return;
     }
     if (snap.type !== 'snapshot') return;
 
+    hideDelayOverlay();   // first real snapshot — dismiss the countdown
     const prevSnapshot = lastSnapshot;
     lastSnapshot = snap;
     setStatus('live', 'live · frame ' + snap.frame_idx);

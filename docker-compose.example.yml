@@ -1,46 +1,50 @@
-version: '3.8'
+# Example Docker Compose for aq2replay.
+# Copy to docker-compose.yml and adjust for your environment.
+# All secrets come from .env (copy .env.example → .env and fill in values).
+#
+# Quick start:
+#   cp .env.example .env   # fill in secrets
+#   docker compose up --build
+#
+# Nginx Proxy Manager users: replace 'ports' with 'expose' and add your
+# 'networks' block (see comment below).
+
 services:
   aq2replay:
     build: .
-    container_name: aq2replay_example
-    command: >
-      sh -c "gunicorn --chdir /app/web --bind 0.0.0.0:5000 \
-      --workers ${GUNICORN_WORKERS:-1} \
-      --threads ${GUNICORN_THREADS:-8} \
-      --timeout ${GUNICORN_TIMEOUT:-180} \
-      --graceful-timeout ${GUNICORN_GRACEFUL_TIMEOUT:-30} \
-      --access-logfile - --error-logfile - app:app"
+    container_name: aq2replay
     ports:
       - "5000:5000"
-    environment:
-      - FLASK_DEBUG=${FLASK_DEBUG}
-      - TZ=${TZ}
-      - PROXY_FIX_ENABLED=${PROXY_FIX_ENABLED}
-      - ENABLE_HSTS=${ENABLE_HSTS}
-      - API_BEARER_AUTH_ENABLED=${API_BEARER_AUTH_ENABLED}
-      - API_BEARER_HEADER=${API_BEARER_HEADER}
-      - API_BEARER_SCOPE=${API_BEARER_SCOPE}
-      - API_RATE_LIMIT_ENABLED=${API_RATE_LIMIT_ENABLED}
-      - STATS_REINDEX_API_ENABLED=${STATS_REINDEX_API_ENABLED}
-      - GUNICORN_WORKERS=${GUNICORN_WORKERS}
-      - GUNICORN_THREADS=${GUNICORN_THREADS}
-      - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT}
-      - GUNICORN_GRACEFUL_TIMEOUT=${GUNICORN_GRACEFUL_TIMEOUT}
-      - ASSET_BASE_URL=${ASSET_BASE_URL}
-      - LIVE_PRESET_PASSWORD=${LIVE_PRESET_PASSWORD}
-      - STATS_DB_PATH=${STATS_DB_PATH}
-      - STATS_DB_FALLBACK_PATH=${STATS_DB_FALLBACK_PATH}
-      - STATS_PREWARM_SCOPE=${STATS_PREWARM_SCOPE}
-      - STATS_PREWARM_TOP_WEAPONS=${STATS_PREWARM_TOP_WEAPONS}
-      - STATS_PREWARM_TOP_PLAYERS=${STATS_PREWARM_TOP_PLAYERS}
-      - STATS_PREWARM_TOP_MAPS=${STATS_PREWARM_TOP_MAPS}
-      - STATS_PREWARM_TOP_H2H=${STATS_PREWARM_TOP_H2H}
-      - STATS_PREWARM_INCLUDE_GEMINI=${STATS_PREWARM_INCLUDE_GEMINI}
-      - AI_INSIGHTS_PROVIDER=${AI_INSIGHTS_PROVIDER}
-      - GEMINI_MODEL=${GEMINI_MODEL}
-      - GEMINI_TIMEOUT_SECONDS=${GEMINI_TIMEOUT_SECONDS}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    # If using Nginx Proxy Manager, replace the ports block above with:
+    #   expose:
+    #     - '5000'
+    #   networks:
+    #     - proxiable
+    env_file:
+      - .env
     volumes:
+      # Demo files — add new .mvd2 / .mvd2.gz without rebuilding.
       - ./mvd2:/app/mvd2:ro
+      # Map files (.bsp).
       - ./bsp:/app/bsp:ro
+      # WAL/PAK textures for top-view rendering (optional).
+      - ./textures:/app/textures:ro
+      # Quake 2 colour palette.
       - ./colormap.pcx:/app/colormap.pcx:ro
+      # Player MD2 models and team skin PNGs (players/male/tris.md2 etc.).
+      - ./players:/app/players:ro
+      # Weapon MD2 models and skins (models/weapons/…).
+      - ./models:/app/models:ro
+      # Generated caches — topview SVG, MD2 JSON, BSP mesh, textures, remote assets.
+      - ./cache:/app/cache
+      # Stats SQLite DB on a named volume for clean lifecycle management.
+      - aq2replay_db:/var/lib/aq2replay
+    restart: unless-stopped
+
+# Uncomment if using Nginx Proxy Manager:
+# networks:
+#   proxiable:
+#     external: true
+
+volumes:
+  aq2replay_db:

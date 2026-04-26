@@ -1,9 +1,14 @@
+# Python bytecode
 venv/
+.venv/
 __pycache__/
-web/__pycache__/
-web/parsers/__pycache__/
 *.pyc
 *.pyo
+
+# Secrets — never bake into the image
+.env
+.env.*
+docker-compose*.yml
 
 # Generated cache — re-created at runtime
 cache/
@@ -14,11 +19,29 @@ bsp/
 textures/
 colormap.pcx
 
-# Dev / editor noise
-.git/
-*.md
-*.stats
+# Game assets — bind-mounted, not baked into the image
+players/
+models/
+
+# SQLite database files
+*.db
+*.db-wal
+*.db-shm
+
+# Source trees and unrelated projects
+source/
+EPIC/
+tests/
+live-test/
+docs/
 stat-collection-main/
 mvdtool-master/
 q2pro-aqtion/
 aq2-tng-aqtion/
+
+# Dev / editor noise
+.git/
+*.md
+*.stats
+.vscode/
+.DS_Store

@@ -5,6 +5,7 @@ import time
 import hmac
 import sqlite3
 import threading
+import collections
 import urllib.error as _urllib_error
 import urllib.request as _urllib_request
 from functools import lru_cache
@@ -1509,6 +1510,10 @@ for _sl in os.environ.get('LIVE_STATUS_LABELS', '').split(','):
 _LIVE_SUB_QUEUE_SIZE   = 16   # per-subscriber backlog before old frames drop
 _LIVE_IDLE_GRACE_SEC   = 90   # close upstream after this long with no subscribers
 _LIVE_MAX_SESSIONS     = 24
+try:
+    _LIVE_STREAM_DELAY_SEC = float(os.environ.get('LIVE_STREAM_DELAY_SEC', '60'))
+except ValueError:
+    _LIVE_STREAM_DELAY_SEC = 60.0
 
 
 class _LiveSession:
@@ -1516,7 +1521,7 @@ class _LiveSession:
 
     __slots__ = (
         'host', 'port', 'password', 'state', 'subscribers',
-        '_lock', '_thread', '_stop', '_last_snapshot',
+        '_lock', '_thread', '_stop', '_last_snapshot', '_last_realtime_snapshot',
         '_last_active', '_started_at', '_status', '_error',
     )
 
@@ -1530,6 +1535,7 @@ class _LiveSession:
         self._thread: Optional[threading.Thread] = None
         self._stop       = threading.Event()
         self._last_snapshot: Optional[dict] = None
+        self._last_realtime_snapshot: Optional[dict] = None
         self._last_active: float = time.monotonic()
         self._started_at: float  = time.time()
         self._status     = 'idle'      # idle | connecting | streaming | closed | error
@@ -1607,11 +1613,38 @@ class _LiveSession:
             return
 
         self._status = 'streaming'
+        # Delay buffer: deque of (release_time, snap) tuples protected by its
+        # own lock so the drain thread and the GTV reader thread don't race.
+        delay_buf: collections.deque = collections.deque()
+        delay_buf_lock = threading.Lock()
+        delay = _LIVE_STREAM_DELAY_SEC
+        drain_stop = threading.Event()
+
+        def _drain_loop() -> None:
+            # Runs on its own thread at a fixed ~50 ms tick so release timing
+            # is independent of GTV block arrival jitter.  Before the drain
+            # thread existed, draining only happened when a new GTV block
+            # arrived — current network irregularities then caused stuttering
+            # in playback of old (already-smooth) buffered data.
+            while not drain_stop.is_set():
+                now = time.monotonic()
+                to_release: list = []
+                with delay_buf_lock:
+                    while delay_buf and delay_buf[0][0] <= now:
+                        _, snap = delay_buf.popleft()
+                        to_release.append(snap)
+                for snap in to_release:
+                    self._fanout(snap)
+                drain_stop.wait(0.05)
+
+        drain_thread = threading.Thread(target=_drain_loop, daemon=True,
+                                        name=f'gtv-drain-{self.port}')
+        drain_thread.start()
+
         try:
             for block in client.iter_blocks():
                 if self._stop.is_set():
                     break
-                # Idle-timeout: close upstream if nobody has been listening.
                 with self._lock:
                     has_subs = bool(self.subscribers)
                     idle_for = time.monotonic() - self._last_active
@@ -1619,7 +1652,14 @@ class _LiveSession:
                     break
                 snap = self.state.process_block(block)
                 if snap is not None:
-                    self._fanout(snap)
+                    if snap.get('type') == 'snapshot':
+                        with self._lock:
+                            self._last_realtime_snapshot = snap
+                    if delay > 0 and snap.get('type') == 'snapshot':
+                        with delay_buf_lock:
+                            delay_buf.append((time.monotonic() + delay, snap))
+                    else:
+                        self._fanout(snap)
         except GtvError as exc:
             self._status, self._error = 'error', str(exc)
             self._fanout({'type': 'error', 'error': str(exc)})
@@ -1627,6 +1667,8 @@ class _LiveSession:
             self._status, self._error = 'error', f'stream: {exc!r}'
             self._fanout({'type': 'error', 'error': f'stream: {exc!r}'})
         finally:
+            drain_stop.set()
+            drain_thread.join(timeout=2.0)
             self._status = 'closed'
             self._fanout({'type': 'disconnect'})
 
@@ -1724,6 +1766,9 @@ def api_live_stream():
     def gen():
         # Open the stream immediately so the client doesn't sit on an empty body.
         yield b': hello\n\n'
+        # Tell the client about the delay so it can show a countdown overlay.
+        if _LIVE_STREAM_DELAY_SEC > 0:
+            yield _format_sse({'type': 'waiting', 'delay_sec': _LIVE_STREAM_DELAY_SEC})
         last_keepalive = time.monotonic()
         try:
             while True:
@@ -1775,29 +1820,35 @@ _SERVER_STATUS_TTL = 20.0         # seconds before a cached result is considered
 
 
 def _probe_server_status_bg(host: str, port: int, password: str) -> None:
-    """Background thread: probe one GTV server, store result in cache."""
+    """Background thread: probe one GTV server, store result in cache.
+
+    Reads _last_realtime_snapshot directly (bypasses the stream delay) so that
+    the server status cards on the live page are always up to date.
+    """
     result: dict = {'host': host, 'port': port, 'status': 'offline',
                     'map': None, 'team_scores': None, 'round_wins': None,
                     'player_count': 0, 'player_names': []}
     try:
         sess = _get_or_create_live_session(host, port, password)
-        sub_q = sess.add_subscriber()
-        try:
-            snap = sub_q.get(timeout=8.0)
-            if isinstance(snap, dict) and snap.get('type') not in ('disconnect', 'error'):
-                names = snap.get('player_names') or {}
-                result.update({
-                    'status':       'online',
-                    'map':          snap.get('map'),
-                    'team_scores':  snap.get('team_scores'),
-                    'round_wins':   snap.get('round_wins'),
-                    'player_count': len(names),
-                    'player_names': list(names.values()),
-                })
-        except _queue.Empty:
-            pass
-        finally:
-            sess.remove_subscriber(sub_q)
+        # Poll the realtime snapshot (not the delayed queue) for up to 8 s.
+        deadline = time.monotonic() + 8.0
+        snap = None
+        while time.monotonic() < deadline:
+            with sess._lock:
+                snap = sess._last_realtime_snapshot
+            if snap is not None:
+                break
+            time.sleep(0.15)
+        if snap is not None:
+            names = snap.get('player_names') or {}
+            result.update({
+                'status':       'online',
+                'map':          snap.get('map'),
+                'team_scores':  snap.get('team_scores'),
+                'round_wins':   snap.get('round_wins'),
+                'player_count': len(names),
+                'player_names': list(names.values()),
+            })
     except Exception:   # noqa: BLE001
         pass
     with _server_status_lock:
