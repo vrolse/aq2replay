@@ -614,8 +614,17 @@ class LiveGameState:
     def _update_configstring(self, idx: int, value: str) -> None:
         prev_map = self.map_name
         self._configstrings[idx] = value
+        new_map: Optional[str] = None
         if _is_world_bsp(idx, value):
             new_map = value.split('/')[-1][:-4]
+        elif idx == 0 and value:
+            # CS_SERVERINFO (index 0) contains \key\value pairs; parse mapname as fallback.
+            parts = value.split('\\')
+            for i in range(1, len(parts) - 1, 2):
+                if parts[i].lower() == 'mapname' and parts[i + 1]:
+                    new_map = parts[i + 1].lower()
+                    break
+        if new_map and new_map != self.map_name:
             if prev_map and new_map != prev_map:
                 # Map changed mid-stream — wipe match state
                 self._reset_match()
@@ -842,6 +851,7 @@ class LiveGameState:
                 'w': s.get('weapon', 0),
                 'h': s.get('health', -1),
                 'ar': s.get('armor', -1),
+                'pm': s.get('pm_type', 0),
                 'it': self._item_state.get(cnum, 0),
             }
             am = s.get('ammo', -1)

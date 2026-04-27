@@ -68,7 +68,8 @@
   }
 
   .live-stats-table { width:100%; font-size:.82rem; border-collapse:collapse; }
-  .live-stats-table th, .live-stats-table td { padding:.32rem .5rem; }
+  .live-stats-table th, .live-stats-table td { padding:.32rem .5rem; vertical-align:middle; }
+  .live-stats-table tbody tr { height:36px; }
   .live-stats-table th { color:var(--muted); font-weight:600; text-align:right; }
   .live-stats-table td { text-align:right; }
   .live-stats-table th.name, .live-stats-table td.name { text-align:left; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -173,8 +174,6 @@
   <div>
     <div class="canvas-wrap-live" id="liveCanvasWrap">
       <canvas id="liveCanvas" width="1024" height="600"></canvas>
-      <!-- 3D iframe — hidden until toggle -->
-      <iframe id="live3dFrame" style="display:none;position:absolute;inset:0;width:100%;height:100%;border:none;" allowfullscreen></iframe>
       <!-- Anti-cheat delay countdown — shown until first real snapshot arrives -->
       <div id="liveDelayOverlay" class="live-delay-overlay" style="display:none;">
         <div class="live-delay-box">
@@ -187,7 +186,6 @@
       <div class="canvas-overlay">
         <button id="btnWireframe" style="background:transparent;color:inherit;border:1px solid #555;border-radius:4px;padding:.15rem .5rem;cursor:pointer;font-size:.72rem;">🗂 Wire</button>
         <button id="btnTopview"   style="background:transparent;color:inherit;border:1px solid #555;border-radius:4px;padding:.15rem .5rem;cursor:pointer;font-size:.72rem;">🗺 Map</button>
-        <button id="btn3D"        style="background:transparent;color:inherit;border:1px solid #555;border-radius:4px;padding:.15rem .5rem;cursor:pointer;font-size:.72rem;">🎮 3D</button>
       </div>
     </div>
 
@@ -244,8 +242,6 @@
     btnDisconn:  document.getElementById('btnDisconnect'),
     btnWire:     document.getElementById('btnWireframe'),
     btnTop:      document.getElementById('btnTopview'),
-    btn3D:       document.getElementById('btn3D'),
-    frame3D:     document.getElementById('live3dFrame'),
     canvas:      document.getElementById('liveCanvas'),
     status:      document.getElementById('liveStatus'),
     errorBox:    document.getElementById('liveError'),
@@ -265,6 +261,14 @@
 
   let evtSource = null;
   let lastSnapshot = null;
+
+  // Per-player persistence — survives between snapshots so transient missing
+  // fields (health before first server update, weapon model before configstring
+  // arrives) don't cause empty cells / disappearing icons.
+  let _pHealth = {};   // name → last known HP (≥ 0)
+  let _pArmor  = {};   // name → last known armor
+  let _pWpn    = {};   // name → last known weapon stem
+  let _pDead   = {};   // name → bool: last known dead state (pm_type 2/3)
 
   // ── delay overlay ───────────────────────────────────────────────────────────
   let _delayTimer = null;
@@ -360,11 +364,6 @@
     src.onopen = function () {
       if (evtSource !== src) return;
       setStatus('live', 'connected');
-      // Reload 3D iframe with fresh params if currently visible
-      if (show3D) {
-        els.frame3D.setAttribute('data-src', '');  // force reload
-        update3DFrame();
-      }
     };
 
     src.onmessage = function (ev) {
@@ -388,8 +387,9 @@
       evtSource = null;
     }
     stopDrawLoop();
-    loadedMap = null;             // force map reload on next connect
-    _liveBoundsObj.frames = [];  // clear stale position history from previous session
+    loadedMap = null;
+    _liveBoundsObj.frames = [];
+    _pHealth = {}; _pArmor = {}; _pWpn = {}; _pDead = {};
     els.btnConnect.style.display = '';
     els.btnDisconn.style.display = 'none';
     if (!silent) setStatus('', 'disconnected');
@@ -416,36 +416,6 @@
     drawFrame();
   });
   els.btnTop.classList.add('is-on');
-
-  // ── 3D view toggle ──────────────────────────────────────────────────────────
-  let show3D = false;
-  function update3DFrame() {
-    if (show3D) {
-      const host = els.host.value.trim();
-      const port = els.port.value.trim();
-      const password = els.password.value;
-      if (host && port) {
-        const src = '/live3d?host=' + encodeURIComponent(host) +
-                    '&port=' + encodeURIComponent(port) +
-                    '&password=' + encodeURIComponent(password);
-        // Only reload if src changed (e.g. new connection)
-        if (els.frame3D.src !== location.origin + src && els.frame3D.getAttribute('data-src') !== src) {
-          els.frame3D.setAttribute('data-src', src);
-          els.frame3D.src = src;
-        }
-      }
-      els.frame3D.style.display = '';
-      els.canvas.style.display = 'none';
-    } else {
-      els.frame3D.style.display = 'none';
-      els.canvas.style.display = '';
-    }
-    els.btn3D.classList.toggle('is-on', show3D);
-  }
-  els.btn3D.addEventListener('click', function () {
-    show3D = !show3D;
-    update3DFrame();
-  });
 
   // ── snapshot handler ────────────────────────────────────────────────────────
   function handleSnapshot(snap) {
@@ -597,6 +567,7 @@
     loadedMap = name;
     killPositions = [];
     seenKills.clear();
+    _pHealth = {}; _pArmor = {}; _pWpn = {}; _pDead = {};
     currentMapGeo = geoCache[name] || null;
     currentTopview = topviewCache[name] || null;
 
@@ -763,13 +734,48 @@
     const clipByName   = {};
     for (const [num, name] of Object.entries(namesDict)) {
       const ps = framePlrs[num];
-      if (!ps) continue;
-      if (ps.w != null) {
-        const stem = wmodels[String(ps.w)];
-        if (stem) wpnByName[name] = stem;
+      if (!ps) {
+        // Player not in this frame — fall back to persisted values so
+        // the row doesn't flash empty between round-end and next respawn.
+        if (_pDead[name]) {
+          healthByName[name] = 0;   // keep showing dead bar, not stale HP
+          // wpnByName stays empty (null default)
+        } else {
+          if (_pHealth[name] != null) healthByName[name] = _pHealth[name];
+          if (_pWpn[name])             wpnByName[name]    = _pWpn[name];
+        }
+        if (_pArmor[name] != null) armorByName[name] = _pArmor[name];
+        continue;
       }
-      if (ps.h  != null && ps.h  >= 0) healthByName[name] = ps.h;
-      if (ps.ar != null && ps.ar >= 0) armorByName[name]  = ps.ar;
+      // pm_type: 0=normal, 1=spectator, 2=dead, 3=gib. Persisted in pos_state delta.
+      const isDead = (ps.pm === 2 || ps.pm === 3);
+      _pDead[name] = isDead;
+      if (isDead) {
+        // Dead: 0% health bar, no weapon icon.
+        healthByName[name] = 0;
+        wpnByName[name] = null;
+      } else {
+        // Alive: update weapon icon, persisting across scope/reload (ps.w===0) frames.
+        if (ps.w != null) {
+          if (ps.w > 0) {
+            const stem = wmodels[String(ps.w)];
+            if (stem) { wpnByName[name] = stem; _pWpn[name] = stem; }
+            else if (_pWpn[name]) wpnByName[name] = _pWpn[name];  // model not resolved yet
+          } else {
+            // ps.w===0: scope zoom or reload animation — keep persisted icon.
+            if (_pWpn[name]) wpnByName[name] = _pWpn[name];
+          }
+        }
+        // Health: -1 = no data yet (state-dict default), positive = alive HP.
+        if (ps.h > 0) {
+          healthByName[name] = ps.h;  _pHealth[name] = ps.h;
+        } else if (ps.h === -1) {
+          if (_pHealth[name] != null) healthByName[name] = _pHealth[name];
+          else                         healthByName[name] = -1;
+        }
+      }
+      if (ps.ar != null && ps.ar >= 0) { armorByName[name]  = ps.ar; _pArmor[name]  = ps.ar; }
+      else if (_pArmor[name] != null)     armorByName[name]  = _pArmor[name];
       if (ps.it) itemsByName[name] = ps.it;
       if (ps.am != null && ps.am >= 0) ammoByName[name]   = ps.am;
       if (ps.cl != null && ps.cl >= 0) clipByName[name]   = ps.cl;
@@ -804,8 +810,10 @@
     }
 
     function isSpectator(n) {
-      if (framePlrs[nameToNum[n]] != null) return false;    // in current frame
-      if (recentNums.has(nameToNum[n])) return false;       // seen recently (between rounds)
+      const num = nameToNum[n];
+      const ps  = framePlrs[num];
+      if (ps != null) return ps.pm === 1;   // PM_SPECTATOR=1; otherwise in frame = playing
+      if (recentNums.has(num)) return false; // seen recently (between rounds)
       if ((k[n] || 0) || (shots[n] || 0)) return false;
       if ((d[n] || 0) || (h[n] || 0) || (dmg[n] || 0) || (tk[n] || 0)) return false;
       return true;
@@ -825,11 +833,14 @@
     function hpCell(n) {
       const hp = healthByName[n];
       const ar = armorByName[n];
-      if (hp == null && ar == null) return '<td style="min-width:75px;"></td>';
-      const pct = hp != null ? Math.max(0, Math.min(100, hp)) : 0;
-      const col = hp == null ? 'rgba(255,255,255,.1)' : (hp > 60 ? '#62d96b' : (hp > 30 ? '#e6c34d' : '#ff5d6c'));
-      const hpTxt = hp != null ? hp : '—';
-      const arHtml = ar != null ? '<span style="font-size:.68rem;color:#8ac4e8;margin-left:.3rem;" title="Armor">🛡' + ar + '</span>' : '';
+      // hp=-1 means player is in the frame but health hasn't arrived yet.
+      // Show the bar structure with dashes so row height never changes.
+      const noHp = (hp == null || hp < 0);
+      const noAr = (ar == null);
+      const pct  = !noHp ? Math.max(0, Math.min(100, hp)) : 0;
+      const col  = noHp  ? 'rgba(255,255,255,.1)' : (hp > 60 ? '#62d96b' : (hp > 30 ? '#e6c34d' : '#ff5d6c'));
+      const hpTxt = !noHp ? hp : '—';
+      const arHtml = (!noAr && ar >= 0 && ar <= 200) ? '<span style="font-size:.68rem;color:#8ac4e8;margin-left:.3rem;" title="Armor">🛡' + ar + '</span>' : '';
       return '<td style="min-width:75px;vertical-align:middle;">' +
         '<div style="display:flex;align-items:center;gap:.25rem;">' +
         '<div style="flex:1;height:6px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;">' +
@@ -840,11 +851,11 @@
     }
 
     function wpnCell(n) {
-      const stem = wpnByName[n];
+      const stem = wpnByName[n] || null;
       if (!stem) return '<td class="wpn"><span style="color:var(--muted);">\u2014</span></td>';
       const label = WEAPON_LABEL[stem] || stem;
       return '<td class="wpn"><img src="/api/pics/' + escapeHtml(stem) + '" alt="' + escapeHtml(label) +
-             '" title="' + escapeHtml(label) + '" loading="lazy" ' +
+             '" title="' + escapeHtml(label) + '" width="30" height="18" ' +
              'onerror="this.style.display=\'none\';this.insertAdjacentHTML(\'afterend\',\'<span style=&quot;font-size:.72rem;color:var(--muted);&quot;>' + escapeHtml(label) + '</span>\')"></td>';
     }
 

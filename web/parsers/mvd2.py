@@ -325,7 +325,7 @@ def _read_player(msg: Msg) -> Optional[dict]:
     bits = msg.u16()
     p: dict = {'n': num, 'bits': bits}
 
-    if bits & P_TYPE:       msg.u8()
+    if bits & P_TYPE:       p['pm_type'] = msg.u8() & 0x7f
     if bits & P_ORIGIN:     p['ox'] = msg.i16(); p['oy'] = msg.i16()
     if bits & P_ORIGIN2:    p['oz'] = msg.i16()
     if bits & P_VIEWOFFSET: msg.skip(3)
@@ -1071,15 +1071,22 @@ def _parse_frame(msg: Msg, state: dict, item_state: Optional[dict] = None,
         if 'ammo'   in p: s['ammo']   = p['ammo']
         if 'frags'  in p: s['frags']  = p['frags']
         if 'clip'   in p: s['clip']   = p['clip']
+        if 'pm_type' in p: s['pm_type'] = p['pm_type']
         if item_state is not None:
+            # Bits 1 (vest) and 2 (helmet) are mutually exclusive — clearing the
+            # opposite armor bit prevents stale bits accumulating when a player
+            # drops one armor type and picks up the other.
+            _ARMOR_BITS = 3
             if 'pickup_str' in p:
                 bit = _ITEM_CS_TO_BIT.get(p['pickup_str'], 0)
                 if bit:
-                    item_state[n] = (item_state.get(n, 0) | bit)
+                    cur = item_state.get(n, 0)
+                    item_state[n] = ((cur & ~_ARMOR_BITS) | bit) if (bit & _ARMOR_BITS) else (cur | bit)
             if 'items_icon' in p and img_to_bit is not None:
                 bit = img_to_bit.get(p['items_icon'], 0)
                 if bit:
-                    item_state[n] = (item_state.get(n, 0) | bit)
+                    cur = item_state.get(n, 0)
+                    item_state[n] = ((cur & ~_ARMOR_BITS) | bit) if (bit & _ARMOR_BITS) else (cur | bit)
 
     for n, s in state.items():
         am = s.get('ammo', -1)
@@ -1768,22 +1775,21 @@ def _build(map_name, player_names, player_teams, frames, frame_count,
             'last_frame': int(captain_last_frame_by_team.get(team_num, 0) or 0),
         }
 
-    # Compute dominant team per pnum from player_team_history (most frames spent on).
-    # This handles players who switch teams mid-match: we use the team they played
-    # the majority of the game on, rather than just their final state.
+    # Compute team per pnum from player_team_history.
+    # Use the FIRST non-zero team each player was assigned, not the frame-weighted
+    # dominant team.  In clanwars with a half-time side-switch, teams swap ctf_r/ctf_b
+    # at half-time, so the dominant-by-frames approach picks the second-half team which
+    # is opposite to the player's actual team affiliation.  The initial assignment is
+    # always set by the server and is always correct for the real team.
     _pth = player_team_history or {}
     dominant_team_by_pnum: dict = {}
     for _pnum, _entries in _pth.items():
         if not _entries:
             continue
-        _sorted = sorted(_entries, key=lambda x: x[0])
-        _team_frames: dict = {}
-        for _i, (_f, _t) in enumerate(_sorted):
-            _end = _sorted[_i + 1][0] if _i + 1 < len(_sorted) else frame_count
+        for _f, _t in sorted(_entries, key=lambda x: x[0]):
             if _t:
-                _team_frames[_t] = _team_frames.get(_t, 0) + max(0, _end - _f)
-        if _team_frames:
-            dominant_team_by_pnum[int(_pnum)] = max(_team_frames, key=lambda t: _team_frames[t])
+                dominant_team_by_pnum[int(_pnum)] = _t
+                break
 
     # Map player_teams from pnum→team to name→team.
     # Use the dominant team (most frames) so a player who switches teams near the
@@ -2803,6 +2809,14 @@ def _build(map_name, player_names, player_teams, frames, frame_count,
         'headshot_kills':     headshot_kills,
         'best_kill_streak':   best_kill_streak,
         'player_teams':       teams_by_name,   # {name: 1 or 2}
+        # Per-slot team timeline for dynamic color switching during playback.
+        # {clientnum_str: [[frame, team], ...]} sorted ascending by frame.
+        # team=0 means the slot was vacated (player disconnected).
+        'player_team_timeline': {
+            str(pnum): [[f, t] for f, t in zip(frames_list, teams_list)]
+            for pnum, (frames_list, teams_list) in team_timeline_by_slot.items()
+            if len(frames_list) > 1 or (frames_list and teams_list[0] != 0)
+        },
         'team_scores':        {str(k): v for k, v in team_scores.items() if k != 0},
         'round_wins':         {str(k): v for k, v in round_wins.items()},
         'round_ties':         round_ties,

@@ -12,6 +12,7 @@ viewBox to the playable area derived from player spawn points.
 """
 import os
 import struct
+import base64 as _b64
 from functools import lru_cache
 
 from PIL import Image
@@ -399,9 +400,11 @@ def _playable_bounds(spawns: list, vert_bounds: dict) -> dict:
     sp_min_x, sp_max_x = min(sxs), max(sxs)
     sp_min_y, sp_max_y = min(sys_), max(sys_)
 
-    # Margin = 80 % of spawn span each side, minimum 1 200 units
-    mx = max((sp_max_x - sp_min_x) * 0.8, 1200)
-    my = max((sp_max_y - sp_min_y) * 0.8, 1200)
+    # Margin = 60 % of spawn span each side, minimum 300 units.
+    # Keeping the minimum small lets compact maps (< 1 000 u across) show
+    # only their actual geometry instead of a vast void around a tiny map tile.
+    mx = max((sp_max_x - sp_min_x) * 0.6, 300)
+    my = max((sp_max_y - sp_min_y) * 0.6, 300)
 
     return {
         'min_x': max(sp_min_x - mx, vert_bounds['min_x']),
@@ -430,6 +433,131 @@ def _shade_z(rgb: tuple, z_norm: float) -> tuple:
 
 def _darken(rgb: tuple, factor: float = 0.55) -> tuple:
     return (int(rgb[0] * factor), int(rgb[1] * factor), int(rgb[2] * factor))
+
+
+def _point_in_poly(px: float, py: float, poly: list) -> bool:
+    """Ray-casting point-in-polygon test."""
+    inside = False
+    n = len(poly)
+    j = n - 1
+    for i in range(n):
+        xi, yi = poly[i]
+        xj, yj = poly[j]
+        if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _poly_area_xy(poly: list) -> float:
+    """Shoelace formula for XY-projected polygon area."""
+    a = 0.0
+    n = len(poly)
+    j = n - 1
+    for i in range(n):
+        a += poly[j][0] * poly[i][1] - poly[i][0] * poly[j][1]
+        j = i
+    return abs(a) * 0.5
+
+
+def _compute_indoor_grid(faces, planes, surfedges, edges, verts, texinfos,
+                         bounds, floor_dot_threshold=0.65, grid_size=64,
+                         global_threshold=0.40):
+    """
+    Rasterize downward-facing (ceiling) BSP faces onto a grid_size×grid_size grid.
+
+    Each cell stores the **minimum ceiling Z** (bottom of the lowest ceiling face
+    covering that cell), encoded as a little-endian int16.  The special sentinel
+    value -32768 means "no ceiling in this cell".
+
+    Ceiling faces whose XY-projected area exceeds global_threshold of the playable
+    area are treated as "global roofs" and excluded, so a single large outer shell
+    doesn't mark the entire map as indoor.
+
+    The JavaScript consumer compares the player's world-space Z against the stored
+    ceiling Z: a player is considered indoors only if their Z is sufficiently below
+    the ceiling (i.e. they are under it, not standing on top of it).
+
+    Returns (b64_str, grid_w, grid_h).
+    b64_str is base64-encoded little-endian int16 array, length = grid_w * grid_h.
+    """
+    import struct as _struct
+
+    bx0, bx1 = bounds['min_x'], bounds['max_x']
+    by0, by1 = bounds['min_y'], bounds['max_y']
+    playable_area = max(1.0, (bx1 - bx0) * (by1 - by0))
+    MARGIN = 200.0
+    _INT16_SENTINEL = -32768   # no ceiling
+
+    ceiling_polys = []   # (coverage_fraction, poly_xy, avg_z)
+    for face in faces:
+        if face['texinfo'] >= len(texinfos):
+            continue
+        ti = texinfos[face['texinfo']]
+        if ti['flags'] & _SKIP_FLAGS:
+            continue
+        name = ti['name']
+        if not name or name.startswith('__') or \
+                name.lower() in ('trigger', 'clip', 'hint', 'origin'):
+            continue
+        if face['plane'] >= len(planes):
+            continue
+        nx, ny, nz, _ = planes[face['plane']]
+        if face['side']:
+            nz = -nz
+        if nz > -floor_dot_threshold:
+            continue
+
+        poly = _face_polygon(face, surfedges, edges, verts)
+        if len(poly) < 3:
+            continue
+
+        cx = sum(v[0] for v in poly) / len(poly)
+        cy = sum(v[1] for v in poly) / len(poly)
+        if (cx < bx0 - MARGIN or cx > bx1 + MARGIN or
+                cy < by0 - MARGIN or cy > by1 + MARGIN):
+            continue
+
+        avg_z    = sum(v[2] for v in poly) / len(poly)
+        poly_xy  = [(v[0], v[1]) for v in poly]
+        area     = _poly_area_xy(poly_xy)
+        ceiling_polys.append((area / playable_area, poly_xy, avg_z))
+
+    # Exclude global roofs; keep only locally-significant ceilings.
+    local = [(p, z) for cov, p, z in ceiling_polys if cov < global_threshold]
+
+    n_cells = grid_size * grid_size
+    # Initialise to sentinel (no ceiling).
+    cell_z = [float('inf')] * n_cells
+
+    if local:
+        cell_w = (bx1 - bx0) / grid_size
+        cell_h = (by1 - by0) / grid_size
+        for poly_xy, avg_z in local:
+            px = [p[0] for p in poly_xy]
+            py = [p[1] for p in poly_xy]
+            gx0 = max(0,           int((min(px) - bx0) / cell_w))
+            gx1 = min(grid_size-1, int((max(px) - bx0) / cell_w))
+            gy0 = max(0,           int((min(py) - by0) / cell_h))
+            gy1 = min(grid_size-1, int((max(py) - by0) / cell_h))
+            for gy in range(gy0, gy1 + 1):
+                wy = by0 + (gy + 0.5) * cell_h
+                for gx in range(gx0, gx1 + 1):
+                    wx = bx0 + (gx + 0.5) * cell_w
+                    if _point_in_poly(wx, wy, poly_xy):
+                        idx = gy * grid_size + gx
+                        # Keep the LOWEST ceiling above this cell.
+                        if avg_z < cell_z[idx]:
+                            cell_z[idx] = avg_z
+
+    # Pack as little-endian int16 array.
+    buf = bytearray(n_cells * 2)
+    for i, z in enumerate(cell_z):
+        val = _INT16_SENTINEL if z == float('inf') \
+              else max(-32767, min(32767, round(z)))
+        _struct.pack_into('<h', buf, i * 2, val)
+
+    return _b64.b64encode(buf).decode(), grid_size, grid_size
 
 
 # ── SVG renderer ───────────────────────────────────────────────────────────────
@@ -462,6 +590,18 @@ def render_topview_svg(bsp_data: bytes, tex_root: str, palette_path: str,
     entity_string = bsp_data[ent_off:ent_off + ent_len].decode('latin-1', errors='replace')
     spawns = _entity_spawns(entity_string)
 
+    # Spawn Z statistics — used to exclude exterior roof surfaces and as the
+    # player Z reference for the 2D viewer's floor-level indicator.
+    spawn_zs = [s['z'] for s in spawns]
+    spawn_z_max = max(spawn_zs) if spawn_zs else None
+    spawn_z_ref = (sum(spawn_zs) / len(spawn_zs)) if spawn_zs else None
+    # Faces whose average Z is more than this above the highest spawn point are
+    # almost certainly exterior roof/terrain surfaces — not the playable floor.
+    # 400 units allows rooftops players can stand on (e.g. serebryanka center
+    # building at z=448 with spawn_z_max=184) while still excluding skybox faces
+    # that are typically 500–1000+ units above the highest spawn.
+    Z_ROOF_MARGIN = 400
+
     # Vertex bounds (used as fallback + clamp)
     xs = [v[0] for v in verts]
     ys = [v[1] for v in verts]
@@ -475,6 +615,7 @@ def render_topview_svg(bsp_data: bytes, tex_root: str, palette_path: str,
 
     # Playable bounds → SVG viewBox
     bounds = _playable_bounds(spawns, vert_bounds)
+    bounds['z_ref'] = spawn_z_ref
     bx0, bx1 = bounds['min_x'], bounds['max_x']
     by0, by1 = bounds['min_y'], bounds['max_y']
     vb_w = bx1 - bx0
@@ -485,7 +626,7 @@ def render_topview_svg(bsp_data: bytes, tex_root: str, palette_path: str,
     wall_stroke_w   = max(5.0, max_span / 220.0)
     # Faces whose centroid falls more than this far outside the playable bounds are culled.
     # 300 units gives outdoor maps more room to include ground-level street/courtyard faces.
-    MARGIN = 300.0
+    MARGIN = 200.0
 
     # SVG uses Y-down; Q2 uses Y-up.  We flip in Python: svg_y = -q2_y.
     # viewBox top = -by1, bottom = -by0
@@ -526,6 +667,13 @@ def render_topview_svg(bsp_data: bytes, tex_root: str, palette_path: str,
                 cy < by0 - MARGIN or cy > by1 + MARGIN):
             continue
         avg_z = sum(v[2] for v in poly) / len(poly)
+        # Skip exterior roof/terrain surfaces that are clearly above the playable
+        # volume (e.g. the outside of an airport terminal roof, or skybox caps).
+        # Players can reach at most ~45 units above their spawn Z via jumping;
+        # the 160-unit margin allows for boxes, mezzanines, and rooftop spawns
+        # while reliably excluding sealed-building exteriors and sky geometry.
+        if spawn_z_max is not None and avg_z > spawn_z_max + Z_ROOF_MARGIN:
+            continue
         floor_faces.append((avg_z, name, poly))
 
     # Lower floors first; elevated floors / roofs (stairs, crates, rooftops) paint on top
@@ -548,8 +696,7 @@ def render_topview_svg(bsp_data: bytes, tex_root: str, palette_path: str,
         z_lo = z_base = min_z
         z_range_eff   = z_range
 
-    ELEV_THRESH   = 32.0                          # units above z_base = "elevated"
-    elev_stroke_w = max(3.0, max_span / 600.0)   # thin outline on elevated faces
+    ELEV_THRESH = 32.0   # units above z_base = "elevated"
 
     # ── Wall lines: strictly vertical BSP faces ────────────────────────────────
     # Only faces with |nz| < 0.15 (~81° from horizontal) qualify.
@@ -611,20 +758,29 @@ def render_topview_svg(bsp_data: bytes, tex_root: str, palette_path: str,
     # The spawn bounds are still used above to filter out-of-level geometry;
     # here we just shrink the viewBox to fit only what actually rendered.
     if floor_faces:
-        fvx = [v[0] for _, _, poly in floor_faces for v in poly]
-        fvy = [v[1] for _, _, poly in floor_faces for v in poly]
-        PAD = max(vb_w * 0.02, 80.0)
-        bx0 = max(bx0, min(fvx) - PAD)
-        bx1 = min(bx1, max(fvx) + PAD)
-        by0 = max(by0, min(fvy) - PAD)
-        by1 = min(by1, max(fvy) + PAD)
-        bounds = {'min_x': bx0, 'max_x': bx1, 'min_y': by0, 'max_y': by1}
+        # Use face centroids (not raw vertices) so a single face whose vertices
+        # extend far outside the playable area does not blow out the viewBox.
+        fcx = [sum(v[0] for v in poly) / len(poly) for _, _, poly in floor_faces]
+        fcy = [sum(v[1] for v in poly) / len(poly) for _, _, poly in floor_faces]
+        PAD = max(vb_w * 0.03, 120.0)
+        bx0 = max(bx0, min(fcx) - PAD)
+        bx1 = min(bx1, max(fcx) + PAD)
+        by0 = max(by0, min(fcy) - PAD)
+        by1 = min(by1, max(fcy) + PAD)
+        bounds = {'min_x': bx0, 'max_x': bx1, 'min_y': by0, 'max_y': by1,
+                  'z_ref': spawn_z_ref}
         vb_w = bx1 - bx0
         vb_h = by1 - by0
         max_span = max(vb_w, vb_h)
         wall_stroke_w  = max(5.0, max_span / 220.0)
-        elev_stroke_w  = max(3.0, max_span / 600.0)
         vb_top = -by1  # re-derive after tightening
+
+    # ── Ceiling / indoor detection grid ───────────────────────────────────────
+    indoor_b64, indoor_gw, indoor_gh = _compute_indoor_grid(
+        faces, planes, surfedges, edges, verts, texinfos, bounds)
+    bounds['indoor_grid'] = indoor_b64
+    bounds['indoor_gw']   = indoor_gw
+    bounds['indoor_gh']   = indoor_gh
 
     # ── Build SVG ─────────────────────────────────────────────────────────────
     # Canonical pixel size so browsers can rasterize when loaded as <img>.
@@ -642,33 +798,96 @@ def render_topview_svg(bsp_data: bytes, tex_root: str, palette_path: str,
         f'<clipPath id="pb">'
         f'<rect x="{bx0:.1f}" y="{vb_top:.1f}" width="{vb_w:.1f}" height="{vb_h:.1f}"/>'
         f'</clipPath>',
+        # Soft drop-shadow filter for elevated faces (boxes, mezzanines, rooftops).
+        # Mimics overhead lighting casting a shadow onto the floor below — more
+        # readable than per-polygon edge strokes, which add visual clutter on maps
+        # with many small height-varying faces (stairs, crates, etc.).
+        f'<filter id="elvs" x="-15%" y="-15%" width="130%" height="130%">'
+        f'<feDropShadow dx="0" dy="0" stdDeviation="{max(4.0, max_span/600):.1f}"'
+        f' flood-color="#000000" flood-opacity="0.45"/>'
+        f'</filter>',
         '</defs>',
         # Dark void background
         f'<rect x="{bx0:.1f}" y="{vb_top:.1f}" width="{vb_w:.1f}" height="{vb_h:.1f}" fill="#0d1018"/>',
         '<g clip-path="url(#pb)">',
     ]
 
-    # Pass 1: floor / roof faces (colored, height-shaded)
-    # Elevated faces (box tops, stair landings, mezzanines) get a thin dark
-    # outline stroke to define their edges against the floor level below.
+    # ── 3-D extrusion helpers ─────────────────────────────────────────────────
+    # Extrusion direction in SVG space: slightly east (+X), mostly south (+Y).
+    # This simulates a viewpoint slightly north-west of overhead — standard for
+    # top-down game maps (think CS:GO radar, AQ2 overview images).
+    EX_DX = 0.22
+    EX_DY = 1.00
+    EX_MAG = (EX_DX ** 2 + EX_DY ** 2) ** 0.5
+
+    # ── Pass 1: collect and categorise face geometry ──────────────────────────
+    ground_polys   = []   # SVG polygon strings for non-elevated faces
+    elev_polys     = []   # SVG polygon strings for elevated face tops
+    wall_quads     = []   # (avg_z, svg_points_str, fill_hex) for extruded walls
+
     for avg_z, tex_name, poly in floor_faces:
         base = texture_color(tex_name, tex_root, palette_path, tex_root2)
         z_n  = max(0.0, min(1.0, (avg_z - z_lo) / z_range_eff))
         fill = _shade_z(base, z_n)
         fc   = '#{:02x}{:02x}{:02x}'.format(*fill)
         pts  = ' '.join(f'{v[0]:.1f},{-v[1]:.1f}' for v in poly)
-        if avg_z > z_base + ELEV_THRESH:
-            # Thin dark edge outlines the top of boxes, stairs, mezzanines
-            ec = '#{:02x}{:02x}{:02x}'.format(
-                max(0, fill[0] - 45), max(0, fill[1] - 45), max(0, fill[2] - 45))
-            lines.append(
-                f'<polygon points="{pts}" fill="{fc}"'
-                f' stroke="{ec}" stroke-width="{elev_stroke_w:.1f}" stroke-linejoin="round"/>'
-            )
-        else:
-            lines.append(f'<polygon points="{pts}" fill="{fc}" stroke="none"/>')
 
-    # Pass 2: wall segments — thick dark lines on top of floors
+        if avg_z <= z_base + ELEV_THRESH:
+            ground_polys.append(f'<polygon points="{pts}" fill="{fc}"/>')
+            continue
+
+        # --- Elevated face: generate 3-D wall quads for south/east-facing edges ---
+        # Extrusion magnitude proportional to height above z_base, capped so
+        # very tall geometry doesn't produce disproportionately thick walls.
+        elev = avg_z - z_base
+        e_raw = min(elev * 0.22, max_span * 0.018)
+        ox = EX_DX / EX_MAG * e_raw
+        oy = EX_DY / EX_MAG * e_raw
+
+        svg_pts = [(v[0], -v[1]) for v in poly]
+        cx_ = sum(p[0] for p in svg_pts) / len(svg_pts)
+        cy_ = sum(p[1] for p in svg_pts) / len(svg_pts)
+
+        # Darken: south wall (full dark), modulated slightly by facing angle
+        wall_rgb = _darken(fill, 0.38)
+        wc = '#{:02x}{:02x}{:02x}'.format(*wall_rgb)
+
+        n_pts = len(svg_pts)
+        for i in range(n_pts):
+            A = svg_pts[i]
+            B = svg_pts[(i + 1) % n_pts]
+            edx = B[0] - A[0]
+            edy = B[1] - A[1]
+            seg_len_sq = edx * edx + edy * edy
+            if seg_len_sq < 4.0:
+                continue   # skip degenerate edges
+            # Perpendicular to edge; orient outward using centroid heuristic
+            nx, ny = -edy, edx
+            mx_, my_ = (A[0] + B[0]) * 0.5, (A[1] + B[1]) * 0.5
+            if nx * (mx_ - cx_) + ny * (my_ - cy_) < 0:
+                nx, ny = -nx, -ny
+            # Only extrude edges that face the extrusion direction (south-east)
+            if nx * EX_DX + ny * EX_DY <= 0:
+                continue
+            qpts = (f'{A[0]:.1f},{A[1]:.1f} {B[0]:.1f},{B[1]:.1f}'
+                    f' {B[0]+ox:.1f},{B[1]+oy:.1f} {A[0]+ox:.1f},{A[1]+oy:.1f}')
+            wall_quads.append((avg_z, qpts, wc))
+
+        # Elevated face top — drawn after all walls so it sits on top
+        elev_polys.append(f'<polygon points="{pts}" fill="{fc}" filter="url(#elvs)"/>')
+
+    # Wall quads sorted by Z so lower walls render behind higher ones
+    wall_quads.sort(key=lambda t: t[0])
+
+    # ── Pass 2: assemble SVG in correct painter's order ───────────────────────
+    # 1. Ground floors
+    lines.extend(ground_polys)
+    # 2. 3-D wall quads (south/east faces of elevated geometry)
+    for _, qpts, wc in wall_quads:
+        lines.append(f'<polygon points="{qpts}" fill="{wc}"/>')
+    # 3. Elevated face tops (on top of their own walls and ground floors)
+    lines.extend(elev_polys)
+    # 4. Wall outlines — thick dark lines delineating rooms (always on top)
     for (p1, p2) in wall_segs.values():
         lines.append(
             f'<line x1="{p1[0]:.1f}" y1="{-p1[1]:.1f}"'

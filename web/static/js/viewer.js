@@ -22,6 +22,29 @@ function playerColor(num) {
   return PLAYER_COLORS[num % PLAYER_COLORS.length];
 }
 
+function teamAtFrame(numStr, frameIdx, replayData) {
+  const timeline = replayData && replayData.player_team_timeline && replayData.player_team_timeline[numStr];
+  if (timeline && timeline.length) {
+    // Binary search: last entry with entry[0] <= frameIdx
+    let lo = 0, hi = timeline.length - 1, found = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (timeline[mid][0] <= frameIdx) { found = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    if (found >= 0 && timeline[found][1]) return timeline[found][1];
+  }
+  // Fall back to static team map
+  const playerTeams = replayData && replayData.player_teams;
+  const playerNames = replayData && replayData.player_names;
+  const name = playerNames && playerNames[numStr];
+  if (name && playerTeams) {
+    const t = playerTeams[name];
+    if (t) return t;
+  }
+  return 0;
+}
+
 function playerColorByTeam(numStr, playerNames, playerTeams) {
   const name = playerNames && playerNames[numStr];
   if (name && playerTeams) {
@@ -31,11 +54,20 @@ function playerColorByTeam(numStr, playerNames, playerTeams) {
   return playerColor(parseInt(numStr));
 }
 
+function playerColorAtFrame(numStr, frameIdx, replayData) {
+  const t = teamAtFrame(numStr, frameIdx, replayData);
+  if (t) return TEAM_COLORS[t];
+  return playerColor(parseInt(numStr));
+}
+
 // ── Projection helpers ───────────────────────────────────────────────────────
 
-function makeProjection(geo, canvasW, canvasH, pad) {
+function makeProjection(geo, canvasW, canvasH, pad, boundsOverride) {
   pad = pad || 30;
-  const b = geo.bounds;
+  // Prefer topview playable bounds over raw BSP geometry bounds.
+  // BSP bounds include out-of-map geometry (sky boxes, forgotten objects,
+  // trigger volumes) that can make the playable area appear as a tiny tile.
+  const b = boundsOverride || geo.bounds;
   const rangeX = b.max_x - b.min_x || 1;
   const rangeY = b.max_y - b.min_y || 1;
   const scaleX = (canvasW - pad * 2) / rangeX;
@@ -168,7 +200,7 @@ function drawMap(canvas, geo, matchData, layerMode, topview) {
   if (canvas.height !== H) canvas.height = H;
 
   const ctx  = canvas.getContext('2d');
-  const proj = makeProjection(geo, W, H, 32);
+  const proj = makeProjection(geo, W, H, 32, topview && topview.params);
 
   ctx.fillStyle = '#0b0e16';
   ctx.fillRect(0, 0, W, H);
@@ -245,7 +277,8 @@ function drawReplay(canvas, geo, frame, replayData, hiddenPlayers, topview, kill
   ctx.fillStyle = '#0b0e16';
   ctx.fillRect(0, 0, W, H);
 
-  const proj = geo ? makeProjection(geo, W, H, 32) : makeFallbackProjection(replayData, W, H);
+  const proj = geo ? makeProjection(geo, W, H, 32, topview && topview.params)
+                   : makeFallbackProjection(replayData, W, H);
 
   if (geo) {
     const hasTopview = topview && topview.img && topview.params;
@@ -271,24 +304,40 @@ function drawReplay(canvas, geo, frame, replayData, hiddenPlayers, topview, kill
 
   const playerTeams = replayData.player_teams || {};
 
+  // Z reference from topview bounds — mean spawn Z from the BSP entity string.
+  const zRef    = topview && topview.params && topview.params.z_ref != null
+    ? topview.params.z_ref : null;
+  const tvParams = topview && topview.params;
+  const hasGrid  = tvParams && tvParams.indoor_grid;
+
   for (const [numStr, ps] of Object.entries(frame.players)) {
     const num = parseInt(numStr);
     if (hiddenPlayers && hiddenPlayers.has(num)) continue;
 
     const [cx, cy] = proj.toCanvas(ps.x, ps.y);
-    // Use ghost_clients list to skip the recorder
     const isGhost = replayData.ghost_clients && replayData.ghost_clients.includes(num);
-    if (isGhost) continue;  // skip MVD recorder
+    if (isGhost) continue;
 
-    const color = playerColorByTeam(numStr, names, playerTeams);
+    const color = playerColorAtFrame(numStr, frame.t != null ? frame.t : 0, replayData);
     const name  = names[numStr] || names[num] || `P${num}`;
+
+    // zLevel: -1 = indoors/underground (dashed ring), 0 = normal, +1 = elevated (▲)
+    // Prefer ceiling grid (spatial) over pure Z-threshold when available.
+    let zLevel = 0;
+    if (hasGrid) {
+      if (_isPlayerIndoor(ps.x, ps.y, ps.z, tvParams)) zLevel = -1;
+      else if (zRef != null && ps.z != null && ps.z > zRef + 200) zLevel =  1;
+    } else if (zRef != null && ps.z != null) {
+      if      (ps.z < zRef - 100) zLevel = -1;
+      else if (ps.z > zRef + 200) zLevel =  1;
+    }
 
     // Direction indicator
     if (ps.a != null) {
       const angle = -ps.a * Math.PI / 180;
       const len   = 12;
       ctx.save();
-      ctx.strokeStyle = color;
+      ctx.strokeStyle = zLevel === -1 ? 'rgba(255,255,255,0.4)' : color;
       ctx.lineWidth   = 2;
       ctx.beginPath();
       ctx.moveTo(cx, cy);
@@ -297,24 +346,42 @@ function drawReplay(canvas, geo, frame, replayData, hiddenPlayers, topview, kill
       ctx.restore();
     }
 
-    // Body circle
+    // Body circle — hollow dashed ring for underground, solid for ground/elevated
     ctx.save();
-    ctx.fillStyle   = color;
-    ctx.strokeStyle = '#0b0e16';
-    ctx.lineWidth   = 1.5;
     ctx.beginPath();
     ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+    if (zLevel === -1) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 2;
+      ctx.setLineDash([3, 3]);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle   = color;
+      ctx.strokeStyle = '#0b0e16';
+      ctx.lineWidth   = 1.5;
+      ctx.fill();
+      ctx.stroke();
+    }
     ctx.restore();
+
+    // Elevated floor indicator — small triangle above the dot
+    if (zLevel === 1) {
+      ctx.save();
+      ctx.font         = '9px sans-serif';
+      ctx.fillStyle    = color;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('▲', cx, cy - 8);
+      ctx.restore();
+    }
 
     // Name label
     ctx.save();
     ctx.font         = '11px sans-serif';
-    ctx.fillStyle    = color;
+    ctx.fillStyle    = zLevel === -1 ? 'rgba(255,255,255,0.5)' : color;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'bottom';
-    ctx.fillText(name, cx, cy - 8);
+    ctx.fillText(name, cx, zLevel === 1 ? cy - 17 : cy - 8);
     ctx.restore();
   }
 }
@@ -355,6 +422,46 @@ function makeFallbackProjection(replayData, W, H) {
     min_y: b.min_y - margin, max_y: b.max_y + margin,
   }};
   return makeProjection(fakeGeo, W, H, pad);
+}
+
+// ── Indoor ceiling grid helpers ─────────────────────────────────────────────
+// Grid stores minimum ceiling Z per cell as little-endian int16.
+// Sentinel -32768 = no ceiling.  A player is "indoors" when their Z is at
+// least INDOOR_CLEARANCE units below the ceiling face — this distinguishes
+// players standing *under* a roof from players standing *on top* of it.
+
+const _INDOOR_CLEARANCE  = 40;   // Q2 units; must be < shortest room height
+const _INDOOR_SENTINEL   = -32768;
+
+let _indoorGridDecoded = null;   // Int16Array
+let _indoorGridSource  = null;   // tvParams object it was decoded from
+
+function _decodeIndoorGrid(tvParams) {
+  if (!tvParams || !tvParams.indoor_grid) return null;
+  if (_indoorGridSource === tvParams) return _indoorGridDecoded;
+  try {
+    const bin  = atob(tvParams.indoor_grid);
+    const buf  = new ArrayBuffer(bin.length);
+    const u8   = new Uint8Array(buf);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    _indoorGridDecoded = new Int16Array(buf);   // little-endian int16
+    _indoorGridSource  = tvParams;
+    return _indoorGridDecoded;
+  } catch (_e) { return null; }
+}
+
+function _isPlayerIndoor(px, py, pz, tvParams) {
+  const grid = _decodeIndoorGrid(tvParams);
+  if (!grid) return false;
+  const gw = tvParams.indoor_gw || 64;
+  const gh = tvParams.indoor_gh || 64;
+  const gx = Math.floor((px - tvParams.min_x) / (tvParams.max_x - tvParams.min_x) * gw);
+  const gy = Math.floor((py - tvParams.min_y) / (tvParams.max_y - tvParams.min_y) * gh);
+  if (gx < 0 || gx >= gw || gy < 0 || gy >= gh) return false;
+  const ceilZ = grid[gy * gw + gx];
+  if (ceilZ === _INDOOR_SENTINEL) return false;
+  // Player is indoors only when clearly below the ceiling face, not on top of it.
+  return (pz == null ? 0 : pz) < ceilZ - _INDOOR_CLEARANCE;
 }
 
 // Draw a soft grid when there's no map geometry

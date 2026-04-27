@@ -252,16 +252,10 @@ fetch('/api/replay/' + encodeURIComponent(FILENAME) + (MAX_FRAMES ? '?max_frames
         btnW.classList.toggle('active', showWireframe);
       }
       if (tvParams) {
-        // Fetch SVG as a blob URL, load into Image, then rasterize onto an
-        // offscreen canvas at a fixed pixel size.  Storing a canvas element
-        // (instead of the SVG Image) makes the subsequent ctx.drawImage()
-        // reliable on all platforms — Chrome/Chromium does not support SVG
-        // blobs in createImageBitmap, and drawImage(svgImg) silently draws
-        // nothing when the SVG has no intrinsic pixel dimensions.
         const svgUrl = '/api/map/' + encodeURIComponent(mapName) + '/topview.svg';
-        const wUnits = tvParams.max_x - tvParams.min_x;
-        const hUnits = tvParams.max_y - tvParams.min_y;
-        const rw = 1024, rh = Math.max(1, Math.round(1024 * hUnits / wUnits));
+        const wU = tvParams.max_x - tvParams.min_x;
+        const hU = tvParams.max_y - tvParams.min_y;
+        const rw = 1024, rh = Math.max(1, Math.round(1024 * hU / wU));
         fetch(svgUrl)
           .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
           .then(blob => {
@@ -278,10 +272,10 @@ fetch('/api/replay/' + encodeURIComponent(FILENAME) + (MAX_FRAMES ? '?max_frames
               btn.classList.toggle('active', showTopview);
               renderFrame(replayFrame);
             };
-            img.onerror = () => { URL.revokeObjectURL(blobUrl); console.warn('topview img decode failed'); };
+            img.onerror = () => URL.revokeObjectURL(blobUrl);
             img.src = blobUrl;
           })
-          .catch(err => console.warn('topview load failed:', err));
+          .catch(() => {});
       }
       renderFrame(0);
     });

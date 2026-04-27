@@ -8,6 +8,7 @@ import threading
 import collections
 import urllib.error as _urllib_error
 import urllib.request as _urllib_request
+from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
 from functools import lru_cache
 from typing import Optional
 import queue as _queue
@@ -594,6 +595,16 @@ def _ensure_topview(mapname: str) -> Optional[str]:
     import json as _json
     out = _topview_svg_path(mapname)
     if os.path.exists(out):
+        # Invalidate old cache that predates the indoor_grid field.
+        bounds_path = _topview_bounds_path(mapname)
+        try:
+            with open(bounds_path) as _f:
+                _old = _json.load(_f)
+            if 'indoor_grid' not in _old:
+                os.unlink(out)
+        except Exception:
+            pass
+    if os.path.exists(out):
         return out
     bsp_path = os.path.join(BSP_DIR, f'{mapname}.bsp')
     if not os.path.exists(bsp_path):
@@ -608,13 +619,17 @@ def _ensure_topview(mapname: str) -> Optional[str]:
             bsp_data = f.read()
         # Pre-fetch textures from the remote asset server into cache/remote/textures/
         # so the SVG renderer gets real colours instead of name-based heuristics.
-        # Try .wal first (native Q2 format), then PNG/JPG; stop on first hit.
+        # Downloads run in parallel (up to 8 threads) so maps with many textures
+        # don't stall for minutes on sequential HTTP requests.
         remote_tex_dir = os.path.join(REMOTE_ASSET_DIR, 'textures')
-        for tex_name in list_bsp_textures(bsp_data):
+        def _fetch_tex(tex_name: str) -> None:
             tex_lower = tex_name.lower()
             for ext in ('.wal', '.png', '.jpg'):
                 if _download_asset(f'textures/{tex_lower}{ext}'):
-                    break
+                    return
+        tex_names = list_bsp_textures(bsp_data)
+        with _ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(_fetch_tex, tex_names))
         svg_text, bounds = render_topview_svg(
             bsp_data, TEX_DIR, PALETTE_PATH, tex_root2=remote_tex_dir)
         with open(out, 'w', encoding='utf-8') as f:
@@ -708,7 +723,7 @@ def api_texture(mapname: str, texname: str):
     """
     import json as _json
     # Security: texname must be safe characters, no path traversal
-    if not re.match(r'^[a-zA-Z0-9_\-\./]+$', texname) or '..' in texname:
+    if not re.match(r'^[a-zA-Z0-9_\-\./{}]+$', texname) or '..' in texname:
         abort(400)
     if not _SAFE_NAME_RE.match(mapname):
         abort(400)
@@ -1747,12 +1762,6 @@ def live_page():
         gtv_port_min=GTV_PORT_MIN,
         gtv_port_max=GTV_PORT_MAX,
     )
-
-
-@app.route('/live3d')
-def live3d_page():
-    """Standalone Three.js 3D live viewer (also embedded as iframe in /live)."""
-    return render_template('live3d.html')
 
 
 @app.route('/api/live/stream')

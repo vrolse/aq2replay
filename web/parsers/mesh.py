@@ -209,8 +209,8 @@ def _playable_bounds(spawns: list, vert_bounds: dict) -> dict:
         return vert_bounds.copy()
     sxs = [s['x'] for s in spawns]
     sys_ = [s['y'] for s in spawns]
-    mx = max((max(sxs) - min(sxs)) * 0.8, 1200)
-    my = max((max(sys_) - min(sys_)) * 0.8, 1200)
+    mx = max((max(sxs) - min(sxs)) * 0.6, 300)
+    my = max((max(sys_) - min(sys_)) * 0.6, 300)
     return {
         'min_x': max(min(sxs) - mx, vert_bounds['min_x']),
         'max_x': min(max(sxs) + mx, vert_bounds['max_x']),
