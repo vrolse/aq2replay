@@ -5,69 +5,126 @@
 {% set active_stats_page = 'weapons' %}
 {% include "_stats_nav.html" %}
 
-<!-- ── Weapon effectiveness summary ────────────────────────── -->
-<div class="card" style="margin-bottom:.7rem;">
-  <div class="stats-section-head" style="margin-bottom:.65rem;">
-    <h2>Weapon Effectiveness</h2>
+<!-- ── Summary cards ───────────────────────────────────────── -->
+<div class="section-title">Weapon Overview</div>
+<p class="section-hint">Kill counts, headshot rates, and win-rate impact for all weapons in the selected filter.</p>
+
+<div class="ak-grid">
+  <div class="ak-stat">
+    <div class="akv" id="waTotalKills">—</div>
+    <div class="akl help-label" title="Total enemy kills across all weapons (team kills excluded).">Total Enemy Kills</div>
   </div>
-  <div class="mini-grid" id="waGrid">
-    <div class="mini-stat"><span class="help-label" title="Enemy kills (team kills excluded).">Total Enemy Kills</span><strong id="waTotalKills">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Distinct weapons seen in this filter.">Weapons Used</span><strong id="waWeaponCount">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Maps with weapon-level data.">Maps Covered</span><strong id="waMapCount">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Win-rate proxy derived from weapon outcomes.">Global Weapon Win Rate</span><strong id="waWinRate">—</strong></div>
+  <div class="ak-stat">
+    <div class="akv" id="waWeaponCount">—</div>
+    <div class="akl help-label" title="Distinct weapons seen in this filter.">Weapons Used</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="waMapCount">—</div>
+    <div class="akl help-label" title="Maps with weapon-level data.">Maps Covered</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="waTopWeapon">—</div>
+    <div class="akl help-label" title="Weapon with the most kills in this filter.">Most Used Weapon</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="waTopHsWeapon">—</div>
+    <div class="akl help-label" title="Weapon with the highest headshot percentage (minimum 20 kills).">Highest HS % Weapon</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="waTopWinWeapon">—</div>
+    <div class="akl help-label" title="Weapon whose users won the most often (minimum 20 kills).">Best Win-Rate Weapon</div>
   </div>
 </div>
 
-<!-- ── Weapon breakdown table ─────────────────────────────── -->
-<div class="card" style="margin-bottom:.7rem;">
-  <div class="stats-section-head">
-    <h2>Weapon Breakdown</h2>
-  </div>
-  <div style="overflow-x:auto;">
-    <table id="weaponTable">
-      <thead>
-        <tr>
-          <th class="sortable help-label" data-sort="weapon" title="Weapon name.">Weapon</th>
-          <th class="num sortable help-label" data-sort="kills" title="Total kills with this weapon.">Kills</th>
-          <th class="num sortable help-label" data-sort="kill_pct" title="Share of all kills made by this weapon.">Kill %</th>
-          <th class="num sortable help-label" data-sort="hs" title="Headshot kills.">HS Kills</th>
-          <th class="num sortable help-label" data-sort="hs_pct" title="Headshot percentage.">HS %</th>
-          <th class="help-label" style="min-width:100px;" title="Visual share of total kills.">Share</th>
-        </tr>
-      </thead>
-      <tbody id="weaponTableBody">
-        <tr><td colspan="6" class="center muted-row">Loading…</td></tr>
-      </tbody>
-    </table>
-  </div>
+<!-- ── Weapon breakdown ────────────────────────────────────── -->
+<div class="section-title">Weapon Stats</div>
+<p class="section-hint">Click any column header to sort. <strong>HS %</strong> — headshots as a share of kills (precision indicator). <strong>Win Rate</strong> — how often players using this weapon were on the winning side. <strong>Avg/Match</strong> — kills per match this weapon appeared in.</p>
+
+<div class="card" style="padding:0;overflow-x:auto;margin-bottom:.7rem;">
+  <table id="weaponTable">
+    <thead>
+      <tr>
+        <th class="sortable help-label" data-sort="weapon" title="Weapon name. Click to go to the weapon detail page.">Weapon</th>
+        <th class="num sortable help-label" data-sort="kills" title="Total enemy kills with this weapon.">Kills</th>
+        <th class="num sortable help-label" data-sort="kill_pct" title="This weapon's share of all kills in the filter.">Kill %</th>
+        <th class="num sortable help-label" data-sort="hs_pct" title="Headshot kills as a percentage of total kills. Higher = more precision kills.">HS %</th>
+        <th class="num sortable help-label" data-sort="win_rate" title="Win rate of matches where this weapon secured kills. Above 55% = weapon skews towards winning sides.">Win Rate</th>
+        <th class="num sortable help-label" data-sort="avg_kills_per_match" title="Average enemy kills per match this weapon appeared in.">Avg/Match</th>
+        <th class="num sortable help-label" data-sort="matches" title="Matches where this weapon got at least one kill.">Matches</th>
+        <th class="help-label" title="Player who got the most kills with this weapon.">Top User</th>
+        <th class="help-label" style="min-width:80px;" title="Visual share of total kills (width = relative kill count).">Share</th>
+      </tr>
+    </thead>
+    <tbody id="weaponTableBody">
+      <tr><td colspan="9" class="center muted-row">Loading…</td></tr>
+    </tbody>
+  </table>
 </div>
 
-<!-- ── Weapon map leaders ──────────────────────────────────── -->
-<div class="card">
-  <div class="stats-section-head">
-    <h2>Best Weapon by Map</h2>
-    <span class="muted-note">Weapon with most kills on each map.</span>
-  </div>
-  <div style="overflow-x:auto;">
-    <table id="weaponMapTable">
-      <thead>
-        <tr>
-          <th class="help-label" title="Map name.">Map</th>
-          <th class="help-label" title="Weapon dominating this map.">Best Weapon</th>
-          <th class="num help-label" title="Kill count for this weapon on this map.">Kills</th>
-          <th class="num help-label" title="Headshot percentage for this weapon on this map.">HS%</th>
-          <th class="num help-label" title="Win-rate proxy when this weapon secures kills.">Win%</th>
-        </tr>
-      </thead>
-      <tbody id="weaponMapBody">
-        <tr><td colspan="5" class="center muted-row">Loading…</td></tr>
-      </tbody>
-    </table>
-  </div>
+<!-- ── Best weapon by map ──────────────────────────────────── -->
+<div class="section-title">Dominant Weapon per Map</div>
+<p class="section-hint">The weapon with the most kills on each map. HS % and Win Rate are specific to that weapon on that particular map.</p>
+
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="weaponMapTable">
+    <thead>
+      <tr>
+        <th class="sortable help-label" data-map-sort="map" title="Map name.">Map</th>
+        <th class="help-label" title="Weapon with the most kills on this map.">Best Weapon</th>
+        <th class="num sortable help-label" data-map-sort="kills" title="Kill count for this weapon on this map.">Kills</th>
+        <th class="num sortable help-label" data-map-sort="hs_pct" title="Headshot percentage for this weapon on this map.">HS %</th>
+        <th class="num sortable help-label" data-map-sort="win_rate" title="Win rate when this weapon secured kills on this map.">Win Rate</th>
+      </tr>
+    </thead>
+    <tbody id="weaponMapBody">
+      <tr><td colspan="5" class="center muted-row">Loading…</td></tr>
+    </tbody>
+  </table>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<style>
+.section-hint {
+  font-size: .8rem;
+  color: var(--muted);
+  margin: 0 0 .9rem;
+  line-height: 1.55;
+}
+/* Vertical stat cards (shared with analytics page) */
+.ak-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: .55rem;
+  margin-bottom: .7rem;
+}
+.ak-stat {
+  padding: .7rem .85rem .6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.ak-stat .akv {
+  font-size: 1.45rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  line-height: 1.05;
+}
+.ak-stat .akl {
+  font-size: .7rem;
+  color: var(--muted);
+  margin-top: .27rem;
+  line-height: 1.35;
+}
+@media (max-width: 820px) {
+  .ak-grid { grid-template-columns: repeat(2, 1fr); }
+}
+/* HS% colored pill */
+.hs-hi  { color: var(--green); font-weight: 600; }
+.hs-mid { }
+.hs-lo  { color: var(--muted); }
+</style>
 <script>
 (function () {
   'use strict';
@@ -80,22 +137,45 @@
 
   function set(id, v) { var e = document.getElementById(id); if (e) e.textContent = v; }
 
-  // ── Weapon breakdown ──────────────────────────────────────
+  function pct(v, d) {
+    if (v == null || v === '') return '—';
+    return parseFloat(v).toFixed(d != null ? d : 1) + '%';
+  }
+
+  // Green ≥55%, red <45%, neutral otherwise
+  function winColor(v) {
+    var n = parseFloat(v);
+    if (isNaN(n)) return '';
+    if (n >= 55) return 'color:var(--green)';
+    if (n < 45)  return 'color:var(--accent2)';
+    return '';
+  }
+
+  // HS% class: ≥30% = high, <15% = low
+  function hsCls(v) {
+    var n = parseFloat(v);
+    if (isNaN(n)) return '';
+    if (n >= 30) return ' class="hs-hi"';
+    if (n < 15)  return ' class="hs-lo"';
+    return '';
+  }
+
+  // ── Main weapon table ─────────────────────────────────────
   var _wData = [];
-  var _wSort = { col: 'hs_pct', dir: -1 };
+  var _topKiller = {}; // weapon → top_killer name
+  var _wSort = { col: 'kills', dir: -1 };
 
   function renderWeapons() {
     var col = _wSort.col, dir = _wSort.dir;
     var totalK = _wData.reduce(function (s, d) { return s + (Number(d.kills) || 0); }, 0);
     _wData.forEach(function (r) {
-      r.kill_pct = totalK ? (Number(r.kills) || 0) / totalK * 100 : null;
-      r.hs_pct   = r.kills ? (Number(r.hs) || 0) / Number(r.kills) * 100 : null;
+      r.kill_pct = totalK ? (Number(r.kills) || 0) / totalK * 100 : 0;
     });
     _wData.sort(function (a, b) {
       var av = a[col], bv = b[col];
       if (av == null) av = col === 'weapon' ? '' : -Infinity;
       if (bv == null) bv = col === 'weapon' ? '' : -Infinity;
-      return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (av - bv);
+      return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (Number(av) - Number(bv));
     });
 
     document.querySelectorAll('#weaponTable th[data-sort]').forEach(function (th) {
@@ -105,19 +185,27 @@
 
     var body = document.getElementById('weaponTableBody');
     if (!_wData.length) {
-      body.innerHTML = '<tr><td colspan="6" class="center muted-row">No weapon data yet.</td></tr>';
+      body.innerHTML = '<tr><td colspan="9" class="center muted-row">No weapon data yet.</td></tr>';
       return;
     }
     var maxK = Math.max.apply(null, _wData.map(function (d) { return Number(d.kills) || 0; }));
     body.innerHTML = _wData.map(function (r) {
-      var barW  = maxK ? Math.round((Number(r.kills) || 0) / maxK * 100) : 0;
-      var wpUrl = '/weapon/' + encodeURIComponent(r.weapon || '');
+      var kills  = Number(r.kills) || 0;
+      var barW   = maxK ? Math.round(kills / maxK * 100) : 0;
+      var wpUrl  = '/weapon/' + encodeURIComponent(r.weapon || '');
+      var killer = _topKiller[r.weapon] || '—';
+      var killerHtml = killer !== '—'
+        ? '<a href="/player/' + encodeURIComponent(killer) + '">' + S.escHtml(killer) + '</a>'
+        : '<span class="muted-note">—</span>';
       return '<tr>' +
         '<td><a href="' + wpUrl + '">' + S.escHtml(r.weapon || 'unknown') + '</a></td>' +
-        '<td class="num">' + S.fmtNum(r.kills) + '</td>' +
+        '<td class="num">' + S.fmtNum(kills) + '</td>' +
         '<td class="num">' + (r.kill_pct != null ? r.kill_pct.toFixed(1) + '%' : '—') + '</td>' +
-        '<td class="num">' + S.fmtNum(r.hs) + '</td>' +
-        '<td class="num">' + (r.hs_pct != null ? r.hs_pct.toFixed(1) + '%' : '—') + '</td>' +
+        '<td class="num"' + hsCls(r.hs_pct) + '>' + pct(r.hs_pct) + '</td>' +
+        '<td class="num" style="' + winColor(r.win_rate) + '">' + pct(r.win_rate) + '</td>' +
+        '<td class="num">' + (r.avg_kills_per_match != null ? parseFloat(r.avg_kills_per_match).toFixed(2) : '—') + '</td>' +
+        '<td class="num">' + S.fmtNum(r.matches) + '</td>' +
+        '<td>' + killerHtml + '</td>' +
         '<td><div class="bar-outer"><div class="bar-inner" style="width:' + barW + '%"></div></div></td>' +
       '</tr>';
     }).join('');
@@ -131,40 +219,91 @@
     renderWeapons();
   });
 
-  S.fetchJson('/api/stats/weapons', filters).then(function (data) {
-    _wData = data || [];
-    renderWeapons();
-  }).catch(function () {
-    document.getElementById('weaponTableBody').innerHTML =
-      '<tr><td colspan="6" class="center muted-row">Failed to load weapon stats.</td></tr>';
-  });
+  // ── Map leaders table ─────────────────────────────────────
+  var _mapData = [];
+  var _mapSort = { col: 'kills', dir: -1 };
 
-  // ── Weapon effectiveness + map leaders ────────────────────
-  S.fetchJson('/api/stats/weapon-analytics?limit=30', filters).then(function (d) {
-    var s = d.summary || {};
-    set('waTotalKills',  S.fmtNum(s.total_enemy_kills));
-    set('waWeaponCount', S.fmtNum(s.weapon_count));
-    set('waMapCount',    S.fmtNum(s.map_count));
-    set('waWinRate',     s.global_weapon_win_rate != null ? parseFloat(s.global_weapon_win_rate).toFixed(1) + '%' : '—');
+  function renderMapTable() {
+    var col = _mapSort.col, dir = _mapSort.dir;
+    var sorted = _mapData.slice().sort(function (a, b) {
+      var av = a[col], bv = b[col];
+      if (av == null) av = col === 'map' ? '' : -Infinity;
+      if (bv == null) bv = col === 'map' ? '' : -Infinity;
+      return typeof av === 'string' ? dir * av.localeCompare(bv) : dir * (Number(av) - Number(bv));
+    });
+
+    document.querySelectorAll('#weaponMapTable th[data-map-sort]').forEach(function (th) {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.mapSort === col) th.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc');
+    });
 
     var body = document.getElementById('weaponMapBody');
-    var rows = d.map_leaders || [];
-    if (!rows.length) {
+    if (!sorted.length) {
       body.innerHTML = '<tr><td colspan="5" class="center muted-row">No weapon-map analytics yet.</td></tr>';
       return;
     }
-    body.innerHTML = rows.map(function (r) {
+    body.innerHTML = sorted.map(function (r) {
       return '<tr>' +
         '<td><a href="/map/' + encodeURIComponent(r.map || '') + '">' + S.escHtml(r.map || 'unknown') + '</a></td>' +
         '<td><a href="/weapon/' + encodeURIComponent(r.weapon || '') + '">' + S.escHtml(r.weapon || 'unknown') + '</a></td>' +
         '<td class="num">' + S.fmtNum(r.kills) + '</td>' +
-        '<td class="num">' + (r.hs_pct != null ? parseFloat(r.hs_pct).toFixed(1) + '%' : '—') + '</td>' +
-        '<td class="num">' + (r.win_rate != null ? parseFloat(r.win_rate).toFixed(1) + '%' : '—') + '</td>' +
+        '<td class="num"' + hsCls(r.hs_pct) + '>' + pct(r.hs_pct) + '</td>' +
+        '<td class="num" style="' + winColor(r.win_rate) + '">' + pct(r.win_rate) + '</td>' +
       '</tr>';
     }).join('');
+  }
+
+  document.getElementById('weaponMapTable').querySelector('thead').addEventListener('click', function (e) {
+    var th = e.target.closest('th[data-map-sort]');
+    if (!th) return;
+    var col = th.dataset.mapSort;
+    if (_mapSort.col === col) { _mapSort.dir *= -1; } else { _mapSort.col = col; _mapSort.dir = col === 'map' ? 1 : -1; }
+    renderMapTable();
+  });
+
+  // ── Fetch both APIs, then render ──────────────────────────
+  var analyticsP = S.fetchJson('/api/stats/weapon-analytics?limit=100', filters);
+  var basicP     = S.fetchJson('/api/stats/weapons', filters);
+
+  analyticsP.then(function (d) {
+    var s = d.summary || {};
+    set('waTotalKills',  S.fmtNum(s.total_enemy_kills));
+    set('waWeaponCount', S.fmtNum(s.weapon_count));
+    set('waMapCount',    S.fmtNum(s.map_count));
+
+    var tw = d.top_weapons || [];
+    // Most used weapon
+    if (tw.length) set('waTopWeapon', tw[0].weapon || '—');
+
+    // Highest HS% weapon (min 20 kills)
+    var hsW = tw.filter(function (r) { return (Number(r.kills) || 0) >= 20; })
+               .slice().sort(function (a, b) { return (Number(b.hs_pct) || 0) - (Number(a.hs_pct) || 0); });
+    if (hsW.length) set('waTopHsWeapon', hsW[0].weapon + ' (' + parseFloat(hsW[0].hs_pct).toFixed(1) + '%)');
+
+    // Best win-rate weapon (min 20 kills)
+    var wrW = tw.filter(function (r) { return (Number(r.kills) || 0) >= 20; })
+               .slice().sort(function (a, b) { return (Number(b.win_rate) || 0) - (Number(a.win_rate) || 0); });
+    if (wrW.length) set('waTopWinWeapon', wrW[0].weapon + ' (' + parseFloat(wrW[0].win_rate).toFixed(1) + '%)');
+
+    _wData = tw;
+    _mapData = d.map_leaders || [];
+
+    // Try to merge top_killer from basic fetch if already resolved
+    basicP.then(function (basic) {
+      (basic || []).forEach(function (r) {
+        if (r.weapon && r.top_killer) _topKiller[r.weapon] = r.top_killer;
+      });
+      renderWeapons();
+    }).catch(function () {
+      renderWeapons();
+    });
+
+    renderMapTable();
   }).catch(function () {
+    document.getElementById('weaponTableBody').innerHTML =
+      '<tr><td colspan="9" class="center muted-row">Failed to load weapon data.</td></tr>';
     document.getElementById('weaponMapBody').innerHTML =
-      '<tr><td colspan="5" class="center muted-row">Failed to load weapon analytics.</td></tr>';
+      '<tr><td colspan="5" class="center muted-row">Failed to load weapon data.</td></tr>';
   });
 })();
 </script>

@@ -6,33 +6,48 @@
 {% include "_stats_nav.html" %}
 
 <!-- ── First-kill dashboard ─────────────────────────────────── -->
-<div class="section-title">First Kill Dashboard</div>
+<div class="section-title">First Blood Impact</div>
+<p class="section-hint">The first kill in a round often decides it. This section shows how often that happens, who gets there first, and which weapons and spots they use.</p>
 
-<div class="analytics-two-col" style="margin-bottom:.7rem;">
-  <div class="card" style="padding:.9rem 1rem;">
-    <div class="mini-grid" id="fkSummaryGrid">
-      <div class="mini-stat"><span class="help-label" title="Total tracked rounds in the current filter.">Rounds</span><strong id="fkTotalRounds">—</strong></div>
-      <div class="mini-stat"><span class="help-label" title="Percent of rounds where a first kill happened.">FK Presence</span><strong id="fkPresence">—</strong></div>
-      <div class="mini-stat"><span class="help-label" title="When a first kill happens, percent of those rounds won by that same side.">FK Conversion</span><strong id="fkConv">—</strong></div>
-      <div class="mini-stat"><span class="help-label" title="Team 1 win rate in rounds where Team 1 got first kill.">T1 FK Win Rate</span><strong id="fkT1Conv">—</strong></div>
-      <div class="mini-stat"><span class="help-label" title="Team 2 win rate in rounds where Team 2 got first kill.">T2 FK Win Rate</span><strong id="fkT2Conv">—</strong></div>
-      <div class="mini-stat"><span class="help-label" title="Rounds where first-kill side converted to a win.">Converted Rounds</span><strong id="fkConverted">—</strong></div>
-    </div>
+<div class="ak-grid" id="fkSummaryGrid">
+  <div class="ak-stat">
+    <div class="akv" id="fkTotalRounds">—</div>
+    <div class="akl help-label" title="Total rounds tracked in the current filter.">Rounds Tracked</div>
   </div>
-  <div class="card" style="padding:.9rem 1rem;">
-    <div class="split-list-grid">
-      <div>
-        <div class="list-caption">Top FK Players</div>
-        <div id="fkTopPlayers" class="tiny-list muted-note">Loading…</div>
-      </div>
-      <div>
-        <div class="list-caption">Top FK Weapons</div>
-        <div id="fkTopWeapons" class="tiny-list muted-note">Loading…</div>
-      </div>
-      <div>
-        <div class="list-caption">Top FK Locations</div>
-        <div id="fkTopLocations" class="tiny-list muted-note">Loading…</div>
-      </div>
+  <div class="ak-stat">
+    <div class="akv" id="fkPresence">—</div>
+    <div class="akl help-label" title="How many rounds had a first kill recorded. Some very short rounds may not have one.">Rounds with First Blood</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="fkConv">—</div>
+    <div class="akl help-label" title="When any team gets the first kill, how often do they win that round? Above 60% means first blood is a strong advantage.">First-Blood Win Rate</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="fkT1Conv">—</div>
+    <div class="akl help-label" title="T1’s round win rate in rounds where T1 struck first.">T1 Wins When Striking First</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="fkT2Conv">—</div>
+    <div class="akl help-label" title="T2’s round win rate in rounds where T2 struck first.">T2 Wins When Striking First</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="fkConverted">—</div>
+    <div class="akl help-label" title="Number of rounds where the team that got the first kill also won the round.">Rounds Decided by First Kill</div>
+  </div>
+</div>
+<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem;">
+  <div class="split-list-grid">
+    <div>
+      <div class="list-caption">Who Gets First Blood</div>
+      <div id="fkTopPlayers" class="tiny-list muted-note">Loading…</div>
+    </div>
+    <div>
+      <div class="list-caption">Weapons Used for First Kill</div>
+      <div id="fkTopWeapons" class="tiny-list muted-note">Loading…</div>
+    </div>
+    <div>
+      <div class="list-caption">Where First Kills Happen</div>
+      <div id="fkTopLocations" class="tiny-list muted-note">Loading…</div>
     </div>
   </div>
 </div>
@@ -41,10 +56,10 @@
   <table>
     <thead>
       <tr>
-        <th class="help-label" title="Map where the first-kill hotspot occurred.">Map</th>
+        <th class="help-label" title="Map name.">Map</th>
         <th class="help-label" title="Weapon used for the first kill.">Weapon</th>
-        <th class="help-label" title="Hit location of the first-kill shot.">Location</th>
-        <th class="num help-label" title="Count of first kills for this map/weapon/location combination.">First Kills</th>
+        <th class="help-label" title="Where on the map the first kill happened (hit location from game data).">Spot</th>
+        <th class="num help-label" title="How many times this map/weapon/spot combination produced the first kill in a round.">First Kills</th>
       </tr>
     </thead>
     <tbody id="fkHotspotsBody">
@@ -54,33 +69,53 @@
 </div>
 
 <!-- ── Team analytics ──────────────────────────────────────── -->
-<div class="section-title">Team Analytics</div>
+<div class="section-title">Team Performance</div>
+<p class="section-hint">How T1 and T2 compare in round wins, survival, clutch situations, and per-map. Also includes captain stats when available.</p>
 
-<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem;">
-  <div class="mini-grid">
-    <div class="mini-stat"><span class="help-label" title="Tracked rounds in selected filter.">Total Rounds</span><strong id="teamTotalRounds">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Share of rounds won by Team 1.">T1 Round Win %</span><strong id="teamT1WinRate">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Share of rounds won by Team 2.">T2 Round Win %</span><strong id="teamT2WinRate">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="T1 conversion after getting first kill.">T1 FK Win %</span><strong id="teamT1FkRate">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="T2 conversion after getting first kill.">T2 FK Win %</span><strong id="teamT2FkRate">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Rounds ending with no winner.">Tied Rounds</span><strong id="teamTies">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Matches where captains were detected.">Captain Matches</span><strong id="teamCaptainMatches">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Distinct captain names detected.">Distinct Captains</span><strong id="teamCaptainDistinct">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Average captain changes per captain-tracked match.">Captain Switches/Match</span><strong id="teamCaptainSwitches">—</strong></div>
+<div class="ak-grid">
+  <div class="ak-stat">
+    <div class="akv" id="teamTotalRounds">—</div>
+    <div class="akl help-label" title="Total rounds tracked in the selected filter.">Rounds Tracked</div>
   </div>
+  <div class="ak-stat">
+    <div class="akv" id="teamT1WinRate">—</div>
+    <div class="akl help-label" title="Share of rounds won by Team 1 overall.">T1 Win Rate</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="teamT2WinRate">—</div>
+    <div class="akl help-label" title="Share of rounds won by Team 2 overall.">T2 Win Rate</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="teamT1FkRate">—</div>
+    <div class="akl help-label" title="T1’s win rate in rounds where T1 got the first kill.">T1 Wins After First Kill</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="teamT2FkRate">—</div>
+    <div class="akl help-label" title="T2’s win rate in rounds where T2 got the first kill.">T2 Wins After First Kill</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="teamTies">—</div>
+    <div class="akl help-label" title="Rounds that ended with no winner (e.g. time ran out with equal kills).">Tied Rounds</div>
+  </div>
+</div>
+<div class="ak-caption-row">
+  <span class="ak-cr-label">Captain Stats</span>
+  <span class="help-label" title="Matches where the captain mechanic was active.">Captain Matches: <strong id="teamCaptainMatches">—</strong></span>
+  <span class="help-label" title="How many different players served as captain in the selected period.">Distinct Captains: <strong id="teamCaptainDistinct">—</strong></span>
+  <span class="help-label" title="On average, how often the captain changed per match. 0 = same captain the whole game.">Avg Changes/Match: <strong id="teamCaptainSwitches">—</strong></span>
 </div>
 
 <div class="card" style="padding:0;overflow-x:auto;margin-bottom:.7rem;">
   <table>
     <thead>
       <tr>
-        <th class="help-label" title="Side identifier.">Team</th>
+        <th class="help-label" title="Team side.">Team</th>
         <th class="num help-label" title="Total rounds played.">Rounds</th>
-        <th class="num help-label" title="Round win percentage.">Win %</th>
-        <th class="num help-label" title="Percent of rounds where at least one player survived.">Survival %</th>
-        <th class="num help-label" title="Win % when this team secures first kill.">FK Win %</th>
-        <th class="num help-label" title="Win rate when outnumbered.">Clutch %</th>
-        <th class="num help-label" title="Kills divided by deaths.">K/D</th>
+        <th class="num help-label" title="What percentage of rounds this team won.">Win Rate</th>
+        <th class="num help-label" title="Percentage of rounds where at least one player on this team survived to the end.">Survived %</th>
+        <th class="num help-label" title="Win rate specifically in rounds where this team got the first kill.">Wins After First Kill</th>
+        <th class="num help-label" title="Win rate in rounds where this team was outnumbered (e.g. 1v2 or worse). High clutch rate = strong individuals.">Win Rate Outnumbered</th>
+        <th class="num help-label" title="Kills divided by deaths for this team.">K/D</th>
       </tr>
     </thead>
     <tbody id="teamAnalyticsBody">
@@ -89,54 +124,69 @@
   </table>
 </div>
 
-<div class="analytics-two-col" style="margin-bottom:.7rem;">
-  <div class="card" style="padding:0;overflow-x:auto;">
-    <table>
-      <thead>
-        <tr>
-          <th class="help-label" title="Map name.">Map</th>
-          <th class="help-label" title="Team side.">Team</th>
-          <th class="num help-label" title="Rounds played.">Rounds</th>
-          <th class="num help-label" title="Round win %.">Win %</th>
-          <th class="num help-label" title="FK win %.">FK Win %</th>
-          <th class="num help-label" title="Survival %.">Survival %</th>
-        </tr>
-      </thead>
-      <tbody id="teamMapBody">
-        <tr><td colspan="6" class="center muted-row">Loading…</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <div class="card" style="padding:0;overflow-x:auto;">
-    <table>
-      <thead>
-        <tr>
-          <th class="help-label" title="Team side.">Team</th>
-          <th class="help-label" title="Captain name.">Captain</th>
-          <th class="num help-label" title="Matches as primary captain.">Matches</th>
-          <th class="num help-label" title="Match win %.">Match Win %</th>
-          <th class="num help-label" title="Round win %.">Round Win %</th>
-          <th class="num help-label" title="Captain changes.">Switches</th>
-        </tr>
-      </thead>
-      <tbody id="teamCaptainBody">
-        <tr><td colspan="6" class="center muted-row">Loading…</td></tr>
-      </tbody>
-    </table>
-  </div>
+<div class="card" style="padding:0;overflow-x:auto;margin-bottom:.7rem;">
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Map name.">Map</th>
+        <th class="help-label" title="Team side.">Team</th>
+        <th class="num help-label" title="Rounds played on this map by this team.">Rounds</th>
+        <th class="num help-label" title="Win rate on this map for this team.">Win Rate</th>
+        <th class="num help-label" title="Win rate when this team got the first kill on this map.">Wins After First Kill</th>
+        <th class="num help-label" title="% of rounds on this map where at least one player survived.">Survived %</th>
+      </tr>
+    </thead>
+    <tbody id="teamMapBody">
+      <tr><td colspan="6" class="center muted-row">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="card" style="padding:0;overflow-x:auto;margin-bottom:.7rem;">
+  <table>
+    <thead>
+      <tr>
+        <th class="help-label" title="Team side.">Team</th>
+        <th class="help-label" title="Captain’s player name.">Captain</th>
+        <th class="num help-label" title="Matches where this player was the primary captain.">Matches as Captain</th>
+        <th class="num help-label" title="Match win rate when this player was captain.">Match Win Rate</th>
+        <th class="num help-label" title="Round win rate when this player was captain.">Round Win Rate</th>
+        <th class="num help-label" title="How many times the captain changed during matches led by this player.">Captain Changes</th>
+      </tr>
+    </thead>
+    <tbody id="teamCaptainBody">
+      <tr><td colspan="6" class="center muted-row">Loading…</td></tr>
+    </tbody>
+  </table>
 </div>
 
 <!-- ── Round analytics ─────────────────────────────────────── -->
-<div class="section-title" style="margin-top:2rem;">Round Analytics</div>
+<div class="section-title" style="margin-top:2rem;">How Rounds Play Out</div>
+<p class="section-hint">Duration, pacing, and what ends each round. Quick-start rounds are those where someone dies in the first few seconds.</p>
 
-<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem;">
-  <div class="mini-grid">
-    <div class="mini-stat"><span class="help-label" title="Average round duration.">Avg Round</span><strong id="roundAvg">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Shortest recorded round.">Shortest</span><strong id="roundShortest">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Longest recorded round.">Longest</span><strong id="roundLongest">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Average kills per round.">Avg Kills/Round</span><strong id="roundKpr">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Percent of rounds with early first kills.">Early Kills %</span><strong id="roundEarly">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Percent of rounds with late first kills.">Late Kills %</span><strong id="roundLate">—</strong></div>
+<div class="ak-grid">
+  <div class="ak-stat">
+    <div class="akv" id="roundAvg">—</div>
+    <div class="akl help-label" title="Average length of a round from start to finish.">Avg Round Length</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="roundShortest">—</div>
+    <div class="akl help-label" title="The shortest recorded round in this filter.">Shortest Round</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="roundLongest">—</div>
+    <div class="akl help-label" title="The longest recorded round in this filter.">Longest Round</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="roundKpr">—</div>
+    <div class="akl help-label" title="Average total kills per round across all tracked rounds.">Kills per Round</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="roundEarly">—</div>
+    <div class="akl help-label" title="Rounds where the first kill happened very early (within the first few seconds). Often aggressive or trap-heavy rounds.">Quick-Start Rounds</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="roundLate">—</div>
+    <div class="akl help-label" title="Rounds where neither team scored a kill for a long time. Tend to be cautious, tactical rounds.">Slow-Start Rounds</div>
   </div>
 </div>
 
@@ -145,9 +195,9 @@
     <table>
       <thead>
         <tr>
-          <th class="help-label" title="How the round was won.">Win Condition</th>
-          <th class="num help-label" title="Rounds ending this way.">Rounds</th>
-          <th class="num help-label" title="Average duration for these rounds (seconds).">Avg Duration (s)</th>
+          <th class="help-label" title="How the round ended — e.g. by eliminating all enemies, by objective, or by time limit.">How the Round Ended</th>
+          <th class="num help-label" title="Number of rounds that ended this way.">Rounds</th>
+          <th class="num help-label" title="Average round length (in seconds) for rounds that ended this way.">Avg Length (s)</th>
         </tr>
       </thead>
       <tbody id="roundWinCondBody">
@@ -159,9 +209,9 @@
     <table>
       <thead>
         <tr>
-          <th class="help-label" title="Which side got the first kill.">First Kill Side</th>
-          <th class="num help-label" title="Rounds where this side got first kill.">Rounds</th>
-          <th class="num help-label" title="Percent of those rounds won by first-kill side.">Conversion %</th>
+          <th class="help-label" title="Which team got the first kill of the round.">Who Struck First</th>
+          <th class="num help-label" title="How many rounds this team got the first kill.">Rounds</th>
+          <th class="num help-label" title="Win rate for that team in rounds where they got the first kill. Above 60% means first blood is a strong predictor of winning.">Win Rate</th>
         </tr>
       </thead>
       <tbody id="roundFkOutcomeBody">
@@ -172,16 +222,33 @@
 </div>
 
 <!-- ── Match analytics ─────────────────────────────────────── -->
-<div class="section-title">Match Analytics</div>
+<div class="section-title">Match Shape &amp; Drama</div>
+<p class="section-hint">Were matches close or one-sided? Did teams come back from behind? The Swing Score measures how often the lead changed hands.</p>
 
-<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem;">
-  <div class="mini-grid">
-    <div class="mini-stat"><span class="help-label" title="Average final round-score gap between teams.">Avg Round Diff</span><strong id="matchAvgDiff">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Matches decided by a small score gap.">Close Match Rate</span><strong id="matchCloseRate">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Matches decided by large score gaps.">Dominant Match Rate</span><strong id="matchDomRate">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Matches where a trailing side came back to win.">Comeback Rate</span><strong id="matchComebackRate">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Volatility indicator based on lead-changes.">Momentum Index</span><strong id="matchMomentumIdx">—</strong></div>
-    <div class="mini-stat"><span class="help-label" title="Total matches in this window.">Total Matches</span><strong id="matchTotal">—</strong></div>
+<div class="ak-grid">
+  <div class="ak-stat">
+    <div class="akv" id="matchAvgDiff">—</div>
+    <div class="akl help-label" title="Average difference in rounds won between the two teams at match end. 1–2 = very close, 5+ = dominant.">Avg Score Gap</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="matchCloseRate">—</div>
+    <div class="akl help-label" title="Matches decided by only 1 or 2 rounds — could have gone either way.">Close Matches</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="matchDomRate">—</div>
+    <div class="akl help-label" title="Matches where one team won by a large margin.">Blowout Matches</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="matchComebackRate">—</div>
+    <div class="akl help-label" title="Matches where the team that was behind at half-time came back to win.">Comeback Rate</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="matchMomentumIdx">—</div>
+    <div class="akl help-label" title="How often the lead changed during matches. Higher = more back-and-forth, more exciting.">Swing Rate</div>
+  </div>
+  <div class="ak-stat">
+    <div class="akv" id="matchTotal">—</div>
+    <div class="akl help-label" title="Total matches in this window.">Matches</div>
   </div>
 </div>
 
@@ -190,8 +257,9 @@
     <table>
       <thead>
         <tr>
-          <th class="help-label" title="Final round-score gap between teams.">Round Diff</th>
-          <th class="num help-label" title="Matches with this score difference.">Matches</th>
+          <th class="help-label" title="Difference in rounds won between the two teams (e.g. 8–5 = gap of 3). Lower gap = closer match.">Score Gap</th>
+          <th class="num help-label" title="Number of matches that ended with this score difference.">Matches</th>
+          <th class="help-label" title="Bar chart of frequency."></th>
         </tr>
       </thead>
       <tbody id="matchScoreDistBody">
@@ -203,11 +271,11 @@
     <table>
       <thead>
         <tr>
-          <th class="help-label" title="Match date.">Date</th>
+          <th class="help-label" title="Date the match was played.">Date</th>
           <th class="help-label" title="Map played.">Map</th>
-          <th class="num help-label" title="Final round score.">Score</th>
-          <th class="num help-label" title="Longest kill streak in the match.">Max Streak</th>
-          <th class="num help-label" title="Momentum score; higher = more volatile.">Momentum</th>
+          <th class="num help-label" title="Final round score (T1 – T2).">Score</th>
+          <th class="num help-label" title="Longest kill streak by a single player in this match.">Best Streak</th>
+          <th class="num help-label" title="How often the lead changed during the match. Higher = more back-and-forth. Click the map link to watch the replay.">Swing Score</th>
         </tr>
       </thead>
       <tbody id="matchMomentumBody">
@@ -220,6 +288,65 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+.section-hint {
+  font-size: .8rem;
+  color: var(--muted);
+  margin: 0 0 .9rem;
+  line-height: 1.55;
+}
+/* Vertical stat cards — big number on top, label below */
+.ak-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: .55rem;
+  margin-bottom: .7rem;
+}
+.ak-stat {
+  padding: .7rem .85rem .6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.ak-stat .akv {
+  font-size: 1.45rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  line-height: 1.05;
+}
+.ak-stat .akl {
+  font-size: .7rem;
+  color: var(--muted);
+  margin-top: .27rem;
+  line-height: 1.35;
+}
+.ak-caption-row {
+  display: flex;
+  gap: 1.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: .45rem .85rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: .7rem;
+  font-size: .82rem;
+}
+.ak-caption-row .ak-cr-label {
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+@media (max-width: 820px) {
+  .ak-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .ak-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
 <script>
 (function () {
   'use strict';
@@ -237,10 +364,30 @@
   }
   function secs(v) {
     if (v == null) return '—';
-    return parseFloat(v).toFixed(1) + 's';
+    var s = parseFloat(v);
+    if (s >= 60) return Math.floor(s / 60) + 'm ' + (s % 60).toFixed(0) + 's';
+    return s.toFixed(1) + 's';
   }
   function teamColor(team) {
     return parseInt(team, 10) === 1 ? 'var(--t1)' : 'var(--t2)';
+  }
+  // Green >55%, yellow 45–55%, red <45%
+  function winColor(v) {
+    var n = parseFloat(v);
+    if (isNaN(n)) return '';
+    if (n >= 55) return 'color:var(--green)';
+    if (n >= 45) return '';
+    return 'color:var(--accent2)';
+  }
+  // Apply color to a stat card value by element ID
+  function colorize(id, v) {
+    var e = document.getElementById(id);
+    if (!e) return;
+    var n = parseFloat(v);
+    if (isNaN(n)) return;
+    if (n >= 55) e.style.color = 'var(--green)';
+    else if (n < 45) e.style.color = 'var(--accent2)';
+    else e.style.color = '';
   }
   function tinyRow(label, value) {
     return '<div class="tiny-row"><span>' + S.escHtml(String(label)) + '</span><strong>' + S.fmtNum(value) + '</strong></div>';
@@ -255,6 +402,9 @@
     set('fkT1Conv',      pct(s.team1_first_kill_conversion_rate, 1));
     set('fkT2Conv',      pct(s.team2_first_kill_conversion_rate, 1));
     set('fkConverted',   S.fmtNum(s.first_kill_to_win_rounds));
+    colorize('fkConv',   s.first_kill_conversion_rate);
+    colorize('fkT1Conv', s.team1_first_kill_conversion_rate);
+    colorize('fkT2Conv', s.team2_first_kill_conversion_rate);
 
     function fillList(elId, rows, labelKey, valKey) {
       var el = document.getElementById(elId);
@@ -295,6 +445,10 @@
     set('teamT1FkRate',        pct(s.team1_first_kill_win_rate, 1));
     set('teamT2FkRate',        pct(s.team2_first_kill_win_rate, 1));
     set('teamTies',            S.fmtNum(s.tied_rounds));
+    colorize('teamT1WinRate',  s.team1_round_win_rate);
+    colorize('teamT2WinRate',  s.team2_round_win_rate);
+    colorize('teamT1FkRate',   s.team1_first_kill_win_rate);
+    colorize('teamT2FkRate',   s.team2_first_kill_win_rate);
     set('teamCaptainMatches',  S.fmtNum(s.matches_with_captains));
     set('teamCaptainDistinct', S.fmtNum(s.distinct_captains));
     set('teamCaptainSwitches', s.captain_switches_per_match != null ? parseFloat(s.captain_switches_per_match).toFixed(2) : '—');
@@ -309,10 +463,10 @@
         return '<tr>' +
           '<td><strong style="color:' + c + '">' + S.escHtml(r.team_label || ('Team ' + r.team)) + '</strong></td>' +
           '<td class="num">' + S.fmtNum(r.rounds) + '</td>' +
-          '<td class="num">' + pct(r.round_win_rate, 1) + '</td>' +
+          '<td class="num" style="' + winColor(r.round_win_rate) + '">' + pct(r.round_win_rate, 1) + '</td>' +
           '<td class="num">' + pct(r.survival_rate, 1) + '</td>' +
-          '<td class="num">' + pct(r.first_kill_win_rate, 1) + '</td>' +
-          '<td class="num">' + pct(r.clutch_rate, 1) + '</td>' +
+          '<td class="num" style="' + winColor(r.first_kill_win_rate) + '">' + pct(r.first_kill_win_rate, 1) + '</td>' +
+          '<td class="num" style="' + winColor(r.clutch_rate) + '">' + pct(r.clutch_rate, 1) + '</td>' +
           '<td class="num">' + (r.kd != null ? parseFloat(r.kd).toFixed(2) : '—') + '</td>' +
         '</tr>';
       }).join('');
@@ -329,8 +483,8 @@
           '<td><a href="/map/' + encodeURIComponent(r.map || '') + '">' + S.escHtml(r.map || 'unknown') + '</a></td>' +
           '<td style="color:' + c + '">' + S.escHtml(r.team_label || ('Team ' + r.team)) + '</td>' +
           '<td class="num">' + S.fmtNum(r.rounds) + '</td>' +
-          '<td class="num">' + pct(r.round_win_rate, 1) + '</td>' +
-          '<td class="num">' + pct(r.first_kill_win_rate, 1) + '</td>' +
+          '<td class="num" style="' + winColor(r.round_win_rate) + '">' + pct(r.round_win_rate, 1) + '</td>' +
+          '<td class="num" style="' + winColor(r.first_kill_win_rate) + '">' + pct(r.first_kill_win_rate, 1) + '</td>' +
           '<td class="num">' + pct(r.survival_rate, 1) + '</td>' +
         '</tr>';
       }).join('');
@@ -347,8 +501,8 @@
           '<td style="color:' + c + '">' + S.escHtml(r.team_label || ('Team ' + r.team)) + '</td>' +
           '<td><a href="/player/' + encodeURIComponent(r.captain_name || '') + '">' + S.escHtml(r.captain_name || 'unknown') + '</a></td>' +
           '<td class="num">' + S.fmtNum(r.matches) + '</td>' +
-          '<td class="num">' + pct(r.match_win_rate, 1) + '</td>' +
-          '<td class="num">' + pct(r.round_win_rate, 1) + '</td>' +
+          '<td class="num" style="' + winColor(r.match_win_rate) + '">' + pct(r.match_win_rate, 1) + '</td>' +
+          '<td class="num" style="' + winColor(r.round_win_rate) + '">' + pct(r.round_win_rate, 1) + '</td>' +
           '<td class="num">' + S.fmtNum(r.captain_switches) + '</td>' +
         '</tr>';
       }).join('');
@@ -388,7 +542,7 @@
         return '<tr>' +
           '<td>' + S.escHtml(String(r.first_kill_side || 'unknown').toUpperCase()) + '</td>' +
           '<td class="num">' + S.fmtNum(r.rounds) + '</td>' +
-          '<td class="num">' + pct(r.conversion_rate, 1) + '</td>' +
+          '<td class="num" style="' + winColor(r.conversion_rate) + '">' + pct(r.conversion_rate, 1) + '</td>' +
         '</tr>';
       }).join('');
     }
@@ -407,12 +561,21 @@
     var sdBody = document.getElementById('matchScoreDistBody');
     var sdRows = d.score_distribution || [];
     if (!sdRows.length) {
-      sdBody.innerHTML = '<tr><td colspan="2" class="center muted-row">No score distribution yet.</td></tr>';
-    } else {
-      sdBody.innerHTML = sdRows.map(function (r) {
-        return '<tr><td>' + S.fmtNum(r.round_diff) + '</td><td class="num">' + S.fmtNum(r.matches) + '</td></tr>';
-      }).join('');
-    }
+        sdBody.innerHTML = '<tr><td colspan="3" class="center muted-row">No score distribution yet.</td></tr>';
+      } else {
+        var maxMatches = Math.max.apply(null, sdRows.map(function(r){ return r.matches || 0; }));
+        sdBody.innerHTML = sdRows.map(function (r) {
+          var barW = maxMatches > 0 ? Math.round((r.matches / maxMatches) * 100) : 0;
+          var label = parseInt(r.round_diff, 10) <= 2 ? '🟢' : parseInt(r.round_diff, 10) >= 6 ? '🔴' : '🟡';
+          return '<tr>' +
+            '<td>' + label + ' ' + S.fmtNum(r.round_diff) + '</td>' +
+            '<td class="num">' + S.fmtNum(r.matches) + '</td>' +
+            '<td style="width:120px;padding-right:.5rem;">' +
+              '<div style="background:var(--accent);opacity:.6;height:10px;border-radius:3px;width:' + barW + '%;min-width:' + (r.matches > 0 ? 3 : 0) + 'px;"></div>' +
+            '</td>' +
+          '</tr>';
+        }).join('');
+      }
 
     var mmBody = document.getElementById('matchMomentumBody');
     var mmRows = d.top_momentum_matches || [];

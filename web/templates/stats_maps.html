@@ -36,8 +36,8 @@
           <th class="num sortable help-label" data-sort="players" title="Distinct players seen on this map.">Players</th>
           <th class="num sortable help-label" data-sort="avg_duration_min" title="Average match duration.">Avg Duration</th>
           <th class="num sortable help-label" data-sort="avg_round_seconds" title="Average round duration in seconds across all rounds played on this map.">Avg Round</th>
-          <th class="num sortable help-label" data-sort="fk_win_rate" title="How often the team that gets the first kill in a round also wins that round, expressed as a percentage.">FK Win%</th>
-          <th class="num sortable help-label" data-sort="balance_score" title="How fairly teams split wins on this map. 100 = perfectly balanced, 0 = one team wins every match.">Balance</th>
+          <th class="num sortable help-label" data-sort="fk_win_rate" title="How often the team that gets the first kill in a round also wins that round. Above 70% means controlling first contact is critical on this map.">FK → Win%</th>
+          <th class="num sortable help-label" data-sort="balance_score" title="How fairly teams split wins on this map. Green = even (both teams win roughly equally). Yellow = one team has a slight edge. Red = one team dominates.">Fairness</th>
           <th class="num sortable help-label" data-sort="t1_wins" title="Matches won by Team 1." style="color:var(--t1)">T1 W</th>
           <th class="num sortable help-label" data-sort="t2_wins" title="Matches won by Team 2." style="color:var(--t2)">T2 W</th>
           <th class="num sortable help-label" data-sort="draws" title="Matches ending tied." style="color:var(--muted)">Draws</th>
@@ -52,6 +52,12 @@
     <button id="mapsPrevBtn">← Prev</button>
     <span id="mapsPageInfo"></span>
     <button id="mapsNextBtn">Next →</button>
+  </div>
+  <div style="font-size:.72rem;color:var(--muted);padding:.5rem .8rem .6rem;display:flex;gap:1.2rem;flex-wrap:wrap;">
+    <span><span style="color:var(--green);font-weight:700;">●</span> Fairness ≥75% — teams win evenly</span>
+    <span><span style="color:var(--yellow);font-weight:700;">●</span> Fairness 50–74% — slight team edge</span>
+    <span><span style="color:var(--accent2);font-weight:700;">●</span> Fairness &lt;50% — one team dominates</span>
+    <span style="margin-left:auto;">FK→Win% = how often the team that kills first in a round wins it</span>
   </div>
 </div>
 {% endblock %}

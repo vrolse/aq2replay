@@ -5914,7 +5914,20 @@ def _compute_rating_state(mode: str,
             'last_played': int(st['last_played'] or 0),
         })
 
-    leaderboard.sort(key=lambda r: (-float(r.get('rating') or 0.0), -int(r.get('games') or 0), r['name']))
+    # Sort by conservative estimate: rating minus half the uncertainty (RD).
+    # This demotes players with few games / high RD, because their rating is
+    # less trustworthy.  A player with rating=1536 but RD=345 sorts below a
+    # player with rating=1533 and RD=233 — which is what the data actually
+    # supports.  Ties broken by games played descending, then name.
+    for row in leaderboard:
+        row['conservative_rating'] = round(
+            float(row.get('rating') or 0.0) - float(row.get('uncertainty') or 0.0) * 0.5, 1
+        )
+    leaderboard.sort(key=lambda r: (
+        -float(r.get('conservative_rating') or 0.0),
+        -int(r.get('games') or 0),
+        r['name'],
+    ))
     for idx, row in enumerate(leaderboard, start=1):
         row['rank'] = idx
 
@@ -5940,6 +5953,12 @@ def get_rating_rankings(mode: str = _DEFAULT_STATS_MODE,
     state = _compute_rating_state(mode=mode, period=period, week=week)
     rows = [r for r in state.get('leaderboard', []) if int(r.get('games') or 0) >= normalized_min_games]
     rows = rows[:normalized_limit]
+    # Re-rank 1…N within the filtered set so the rank column is always
+    # contiguous — no gaps caused by hidden low-games players.
+    for idx, row in enumerate(rows, start=1):
+        row = dict(row)           # shallow copy so cache is not mutated
+        row['rank'] = idx
+        rows[idx - 1] = row
 
     summary = {
         'players': len(rows),

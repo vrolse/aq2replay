@@ -2,7 +2,7 @@
 {% block title %}Rankings — AQ2{% endblock %}
 
 {% block content %}
-<div style="display:flex;align-items:center;justify-content:space-between;gap:.7rem;flex-wrap:wrap;margin-bottom:1rem;">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:.7rem;flex-wrap:wrap;margin-bottom:.5rem;">
   <h1 style="font-size:1.35rem;font-weight:700;">Rankings</h1>
   <div style="display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;">
     <label style="font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:.35rem;">
@@ -43,6 +43,14 @@
   </div>
 </div>
 
+<p style="font-size:.8rem;color:var(--muted);margin:0 0 .9rem;line-height:1.55;">
+  Ranking is based on an Elo-style system. Every player starts at <strong>1500</strong> for the selected period.
+  Winning vs stronger opponents earns more points. The <strong>Confidence</strong> column (RD) shows how certain the rating is —
+  lower is more trustworthy. Players with few games have a high RD, so they are ranked by a
+  <em>conservative estimate</em> (<strong>Rating−½RD</strong>) rather than raw rating.
+  That prevents a player who went 3&ndash;0 in one week from jumping above someone with 25 consistent games.
+</p>
+
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.7rem;margin-bottom:1rem;">
   <div class="card" style="text-align:center;padding:.85rem .6rem;">
     <div class="stat-big" id="rk-players">—</div>
@@ -54,7 +62,7 @@
   </div>
   <div class="card" style="text-align:center;padding:.85rem .6rem;">
     <div class="stat-big" id="rk-rd">—</div>
-    <div class="stat-label help-label" title="Average rating uncertainty (RD). Lower means ratings are more stable.">Avg Uncertainty</div>
+    <div class="stat-label help-label" title="Average rating confidence deviation (RD) across all ranked players. Lower = more stable ratings. Green &lt;150, Yellow 150–250, Red &gt;250.">Avg Confidence</div>
   </div>
 </div>
 
@@ -62,16 +70,16 @@
   <table id="rankTable">
     <thead>
       <tr>
-        <th class="num help-label" title="Ranking position.">#</th>
+        <th class="num help-label" title="Ranking position within the current filter. Always sequential — no gaps.">#</th>
         <th class="help-label" title="Player name.">Player</th>
-        <th class="num help-label" title="Current skill rating estimate.">Rating</th>
-        <th class="num help-label" title="Rating deviation (uncertainty). Lower is more confident.">RD</th>
+        <th class="num help-label" title="Skill rating estimate. Starts at 1500 for the chosen period. Rises when you win, falls when you lose. Winning against stronger opponents gives more points.">Rating</th>
+        <th class="num help-label" title="Conservative rank score = Rating minus half the RD. This is what the rank order is based on. A player with 3 games can have a high raw Rating but a lower score here because of uncertainty.">Score</th>
+        <th class="num help-label" title="Rating confidence: lower = more games played = more reliable rating. Green &lt;150 (trusted), Yellow 150–250, Red &gt;250 (high uncertainty, not enough games).">Confidence</th>
         <th class="num help-label" title="Matches counted in this ranking window.">Games</th>
         <th class="num help-label" title="Match win percentage in this ranking window.">Win%</th>
-        <th class="num help-label" title="Average recent rating delta. Positive means climbing.">Trend</th>
-        <th class="num help-label" title="Stability score from match-to-match performance.">Consistency</th>
-        <th class="num help-label" title="Performance spread. Lower usually means steadier results.">Variance</th>
-        <th class="num help-label" title="Matches in this filter played versus high-rated opposition.">High-Skill</th>
+        <th class="num help-label" title="Average rating change over your last 5 matches. Positive = you are climbing.">Trend</th>
+        <th class="num help-label" title="How consistent your performance is match-to-match. Higher = steadier player.">Consistency</th>
+        <th class="num help-label" title="Matches played against high-rated (1550+) opponents in this window.">vs Strong</th>
       </tr>
     </thead>
     <tbody id="rankBody">
@@ -217,18 +225,27 @@
           return;
         }
 
-        rankBody.innerHTML = rows.map(r => `<tr data-player="${esc(r.name)}" style="cursor:pointer;">
+        rankBody.innerHTML = rows.map(r => {
+          const rd = parseFloat(r.uncertainty || 0);
+          const rdColor = rd < 150 ? 'var(--green)' : rd < 250 ? 'var(--yellow)' : 'var(--accent2)';
+          const rdTitle = rd < 150 ? 'Reliable rating' : rd < 250 ? 'Moderate uncertainty' : 'High uncertainty \u2014 few games played';
+          const lowSample = parseInt(r.games || 0) < 5;
+          const nameBadge = lowSample
+            ? ` <span title="Low sample: fewer than 5 games. Rating is uncertain." style="font-size:.65rem;background:rgba(255,200,60,.18);color:var(--yellow);border:1px solid var(--yellow);border-radius:3px;padding:0 3px;vertical-align:middle;">low</span>`
+            : '';
+          return `<tr data-player="${esc(r.name)}" style="cursor:pointer;">
           <td class="num">${fmt(r.rank)}</td>
-          <td><a href="/player/${encodeURIComponent(r.name)}" style="color:var(--text);font-weight:600;">${esc(r.name)}</a></td>
+          <td><a href="/player/${encodeURIComponent(r.name)}" style="color:var(--text);font-weight:600;">${esc(r.name)}</a>${nameBadge}</td>
           <td class="num">${fmt(r.rating, 1)}</td>
-          <td class="num">${fmt(r.uncertainty, 1)}</td>
+          <td class="num" style="color:var(--muted);">${fmt(r.conservative_rating != null ? r.conservative_rating : (r.rating - rd * 0.5), 1)}</td>
+          <td class="num" style="color:${rdColor};" title="${rdTitle}">${fmt(rd, 1)}</td>
           <td class="num">${fmt(r.games)}</td>
           <td class="num">${pct(r.win_rate)}</td>
-          <td class="num" style="color:${parseFloat(r.trend || 0) >= 0 ? 'var(--green)' : 'var(--accent2)'};">${fmt(r.trend, 2)}</td>
+          <td class="num" style="color:${parseFloat(r.trend || 0) >= 0 ? 'var(--green)' : 'var(--accent2)'}">${fmt(r.trend, 2)}</td>
           <td class="num">${fmt(r.consistency_score, 1)}</td>
-          <td class="num">${fmt(r.skill_variance, 2)}</td>
           <td class="num">${fmt(r.high_skill_matches)}</td>
-        </tr>`).join('');
+        </tr>`;
+        }).join('');
 
         const first = rows[0] && rows[0].name;
         if (first) renderHistory(first);

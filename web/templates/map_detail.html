@@ -155,38 +155,38 @@
 </div>
 
 <!-- ── Spatial analytics ── -->
-<div class="section-title" style="margin-top:2rem;">Spatial Analytics</div>
+<div class="section-title" style="margin-top:2rem;">Map Heatmaps &amp; Spatial Analysis</div>
 <div class="card" style="padding:.85rem;">
   <div class="spatial-controls">
     <label>
-      Layer
+      View
       <select id="spatialKind">
-        <option value="kills" selected>Kill Heatmap</option>
-        <option value="deaths">Death Heatmap</option>
-        <option value="first_kills">First-Kill Heatmap</option>
-        <option value="fk_routes">First-Kill Approach Routes</option>
-        <option value="movement">Movement Density + Routes</option>
-        <option value="zone_risk">Danger/Safe Zones</option>
-        <option value="kills_vs_deaths">Kills vs Deaths (diff)</option>
+        <option value="kills" selected>Where Kills Happen</option>
+        <option value="deaths">Where Players Die Most</option>
+        <option value="first_kills">First-Blood Hot Spots</option>
+        <option value="fk_routes">Paths to First Contact</option>
+        <option value="movement">Player Movement &amp; Paths</option>
+        <option value="zone_risk">Danger &amp; Safe Areas</option>
+        <option value="kills_vs_deaths">Kill Advantage by Area</option>
       </select>
     </label>
     <label>
-      Cell Size
+      Detail Level
       <select id="spatialCellSize">
-        <option value="48">48</option>
-        <option value="64" selected>64</option>
-        <option value="96">96</option>
-        <option value="128">128</option>
-        <option value="160">160</option>
-        <option value="224">224</option>
+        <option value="48">Very Fine (slow)</option>
+        <option value="64" selected>Fine</option>
+        <option value="96">Medium</option>
+        <option value="128">Coarse</option>
+        <option value="160">Very Coarse</option>
+        <option value="224">Wide (fastest)</option>
       </select>
     </label>
     <label>
-      Scale
-      <select id="spatialScale" title="Intensity normalization curve">
-        <option value="sqrt" selected>Sqrt (balanced)</option>
-        <option value="log">Log (highlight edges)</option>
-        <option value="linear">Linear (raw)</option>
+      Color Curve
+      <select id="spatialScale" title="How activity is mapped to color brightness. 'Balanced' works best for most views.">
+        <option value="sqrt" selected>Balanced (default)</option>
+        <option value="log">Boost Low Activity</option>
+        <option value="linear">Raw Count</option>
       </select>
     </label>
     <label>
@@ -202,6 +202,8 @@
     <button id="spatialRefresh" type="button">Refresh</button>
     <button id="spatialFullscreen" type="button" title="Toggle fullscreen">⛶ Fullscreen</button>
   </div>
+
+  <div id="spatialDesc" class="spatial-desc">Pick a view above to explore where kills happen, how players move, and which areas are most dangerous.</div>
 
   <div id="spatialStage" class="spatial-stage">
     <canvas id="spatialCanvas"></canvas>
@@ -221,12 +223,13 @@
   <div class="spatial-grid">
     <div class="card" style="padding:.65rem;overflow-x:auto;">
       <div class="spatial-subtitle">Top Routes</div>
+      <p class="spatial-subtable-help">Most-used paths on the map. Thicker arrows in the view = more common.</p>
       <table>
         <thead>
           <tr>
-            <th class="help-label" title="Start cell for the movement route.">From</th>
-            <th class="help-label" title="Destination cell for the movement route.">To</th>
-            <th class="num help-label" title="How often this route appears.">Freq</th>
+            <th class="help-label" title="Where the movement started (map coordinates).">From Area</th>
+            <th class="help-label" title="Where the movement ended (map coordinates).">To Area</th>
+            <th class="num help-label" title="How many times players took this path.">Times</th>
           </tr>
         </thead>
         <tbody id="routesBody">
@@ -236,12 +239,13 @@
     </div>
     <div class="card" style="padding:.65rem;overflow-x:auto;">
       <div class="spatial-subtitle">Danger Zones</div>
+      <p class="spatial-subtable-help">Areas where you're most likely to be killed. Approach with caution.</p>
       <table>
         <thead>
           <tr>
-            <th class="help-label" title="Grid cell identifier.">Cell</th>
-            <th class="num help-label" title="Relative danger score for this cell.">Risk</th>
-            <th class="num help-label" title="Number of supporting events in this cell.">Events</th>
+            <th class="help-label" title="Map coordinates for this area.">Area</th>
+            <th class="num help-label" title="Danger score 0–100: higher = deadlier.">Danger</th>
+            <th class="num help-label" title="Total kills + deaths recorded here.">Events</th>
           </tr>
         </thead>
         <tbody id="dangerBody">
@@ -251,12 +255,13 @@
     </div>
     <div class="card" style="padding:.65rem;overflow-x:auto;">
       <div class="spatial-subtitle">Safe Zones</div>
+      <p class="spatial-subtable-help">Low-activity areas — relatively safer to regroup or retreat to.</p>
       <table>
         <thead>
           <tr>
-            <th class="help-label" title="Grid cell identifier.">Cell</th>
-            <th class="num help-label" title="Relative safety score for this cell.">Safe</th>
-            <th class="num help-label" title="Number of supporting events in this cell.">Events</th>
+            <th class="help-label" title="Map coordinates for this area.">Area</th>
+            <th class="num help-label" title="Safety score 0–100: higher = fewer kills here.">Safety</th>
+            <th class="num help-label" title="Total events recorded here (lower is safer).">Events</th>
           </tr>
         </thead>
         <tbody id="safeBody">
@@ -266,13 +271,14 @@
     </div>
     <div class="card" style="padding:.65rem;overflow-x:auto;">
       <div class="spatial-subtitle">Spawn Pairings</div>
+      <p class="spatial-subtable-help">How often each team starts in a given spot, and whether that spawn gives one team an edge (+ = T1 advantage, − = T2 advantage).</p>
       <table>
         <thead>
           <tr>
-            <th class="help-label" title="Team 1 spawn zone.">T1 Spawn</th>
-            <th class="help-label" title="Team 2 spawn zone.">T2 Spawn</th>
-            <th class="num help-label" title="Rounds observed with this spawn pairing.">Rounds</th>
-            <th class="num help-label" title="Advantage score for Team 1 relative to Team 2 at this spawn pairing.">Adv</th>
+            <th class="help-label" title="Team 1 starting position (map coordinates).">T1 Spawn</th>
+            <th class="help-label" title="Team 2 starting position (map coordinates).">T2 Spawn</th>
+            <th class="num help-label" title="How many rounds used this spawn combination.">Rounds</th>
+            <th class="num help-label" title="Spawn advantage for Team 1. Positive = T1 had the edge; negative = T2 had the edge.">T1 Edge</th>
           </tr>
         </thead>
         <tbody id="spawnBody">
@@ -448,6 +454,22 @@ body.spatial-fs-open { overflow: hidden; }
   white-space: nowrap;
   display: none;
 }
+.spatial-desc {
+  font-size: .82rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: .65rem;
+  padding: .4rem .65rem;
+  background: rgba(255,255,255,.04);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.spatial-subtable-help {
+  font-size: .72rem;
+  color: var(--muted);
+  margin: 0 0 .4rem;
+  line-height: 1.4;
+}
 </style>
 
 <script>
@@ -566,6 +588,34 @@ body.spatial-fs-open { overflow: hidden; }
   });
 
   // ── Spatial analytics ─────────────────────────────────────────────────────
+
+  // Plain-language descriptions for each view layer
+  const _SPATIAL_DESCRIPTIONS = {
+    kills:          'Brighter = more kills happened here. Red hot spots are the most contested areas — great ambush points, but risky to cross in the open.',
+    deaths:         'Brighter = more players died here. If you keep dying in the same spot, this view will show you exactly where to stop going.',
+    first_kills:    'Shows where the first kill of each round tends to happen. Hot spots are the typical opening-fight locations — rotate here fast or avoid if you\'re not ready.',
+    fk_routes:      'Arrows show the paths players most commonly take before the first kill. Thicker arrows = more popular routes. Use this to predict where opponents will come from.',
+    movement:       'Brighter = players pass through here more often. Routes show the most common paths across the map. Low-traffic areas may offer surprise flanks.',
+    zone_risk:      'Red = high danger (lots of kills, few escapes). Blue = relatively safe. Plan your route by skirting red zones or use them to hunt opponents.',
+    kills_vs_deaths:'Orange areas = you tend to get more kills here than deaths. Blue areas = the opposite. Stick to orange zones and avoid pushing into blue ones.',
+  };
+
+  // Labels for the legend title per layer
+  const _LEGEND_TITLES = {
+    kills:          'Kill Density',
+    deaths:         'Death Density',
+    first_kills:    'First-Kill Freq.',
+    movement:       'Traffic',
+    fk_routes:      '',
+    zone_risk:      'Danger Level',
+    kills_vs_deaths:'Orange = Kill Lead  /  Blue = Death Lead',
+  };
+
+  function _updateSpatialDesc(kind) {
+    var el = document.getElementById('spatialDesc');
+    if (el) el.textContent = _SPATIAL_DESCRIPTIONS[kind] || '';
+  }
+
   const _spatialKindEl = document.getElementById('spatialKind');
   const _spatialCellEl = document.getElementById('spatialCellSize');
   const _spatialScaleEl = document.getElementById('spatialScale');
@@ -651,6 +701,8 @@ body.spatial-fs-open { overflow: hidden; }
     if (bar) bar.style.background = _legendGradientFor(kind);
     if (_spatialLegendMin) _spatialLegendMin.textContent = kind === 'kills_vs_deaths' ? '−' + fmt(maxCount) : '0';
     if (_spatialLegendMax) _spatialLegendMax.textContent = kind === 'kills_vs_deaths' ? '+' + fmt(maxCount) : fmt(maxCount);
+    const titleEl = _spatialLegend.querySelector('.spatial-legend__title');
+    if (titleEl) titleEl.textContent = _LEGEND_TITLES[kind] || 'Intensity';
     _spatialLegend.classList.remove('is-hidden');
   }
 
@@ -726,14 +778,17 @@ body.spatial-fs-open { overflow: hidden; }
       _spawnBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:.8rem;">No spawn pairing data yet.</td></tr>';
       return;
     }
-    _spawnBody.innerHTML = rows.slice(0, 12).map(r => `
-      <tr>
+    _spawnBody.innerHTML = rows.slice(0, 12).map(r => {
+      const adv = parseFloat(r.spawn_advantage || 0);
+      const advColor = adv > 0.5 ? 'var(--t1)' : adv < -0.5 ? 'var(--t2)' : 'var(--muted)';
+      const advLabel = adv > 0 ? '+' + adv.toFixed(1) : adv.toFixed(1);
+      return `<tr>
         <td>${_coordLabel(r.team1_spawn_x, r.team1_spawn_y)}</td>
         <td>${_coordLabel(r.team2_spawn_x, r.team2_spawn_y)}</td>
         <td class="num">${fmt(r.rounds)}</td>
-        <td class="num">${fmt(r.spawn_advantage, 1)}</td>
-      </tr>
-    `).join('');
+        <td class="num" style="color:${advColor};font-weight:600;">${adv !== 0 ? advLabel : '—'}</td>
+      </tr>`;
+    }).join('');
   }
 
   function _spatialColor(kind, intensity, cell) {
@@ -999,8 +1054,9 @@ body.spatial-fs-open { overflow: hidden; }
     } else {
       totalPoints = Number(_spatialPayload.total_points || 0);
     }
-    const peakLabel = kind === 'kills_vs_deaths' ? ('±' + fmt(peak) + ' net') : (fmt(peak) + ' events');
-    _setSpatialMeta(cells.length + ' cells • ' + fmt(totalPoints) + ' points • peak ' + peakLabel + ' • scale: ' + _spatialScale);
+    const peakLabel = kind === 'kills_vs_deaths' ? ('±' + fmt(peak) + ' net kills') : (fmt(peak) + ' in the busiest cell');
+    const kindNames = { kills: 'kill', deaths: 'death', first_kills: 'first-kill', movement: 'movement', fk_routes: 'route', zone_risk: 'zone', kills_vs_deaths: 'diff' };
+    _setSpatialMeta(cells.length + ' grid cells shown • ' + fmt(totalPoints) + ' recorded events • peak: ' + peakLabel);
   }
 
   function _buildSpatialPath() {
@@ -1099,6 +1155,7 @@ body.spatial-fs-open { overflow: hidden; }
     if (!_spatialCanvas) return;
     const spec = _buildSpatialPath();
     _spatialLastKind = spec.kind;
+    _updateSpatialDesc(spec.kind);
     _setSpatialEmpty('Loading spatial data...');
     _setSpatialMeta('Loading analytics...');
 
@@ -1208,9 +1265,11 @@ body.spatial-fs-open { overflow: hidden; }
           let label;
           if (_spatialLastKind === 'kills_vs_deaths') {
             const sign = c.count >= 0 ? '+' : '';
-            label = '(' + Math.round(c.x) + ', ' + Math.round(c.y) + ')  —  net ' + sign + c.count;
+            label = sign + c.count + ' net kills in this area';
           } else {
-            label = '(' + Math.round(c.x) + ', ' + Math.round(c.y) + ')  —  ' + c.count + ' events';
+            const kindLabel = { kills: 'kills', deaths: 'deaths', first_kills: 'first-kills',
+              movement: 'times passed through', zone_risk: 'events', fk_routes: 'events' };
+            label = c.count + ' ' + (kindLabel[_spatialLastKind] || 'events') + ' in this area';
           }
           _spatialTooltip.textContent = label;
           _spatialTooltip.style.left = (e.clientX - rect.left + 14) + 'px';
