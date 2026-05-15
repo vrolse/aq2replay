@@ -2,6 +2,20 @@
 {% block title %}{{ map_name }} — Map Stats — AQ2{% endblock %}
 
 {% block content %}
+<style>
+.map-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: .7rem;
+  margin-bottom: 1.6rem;
+}
+@media (max-width: 860px) {
+  .map-summary-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 480px) {
+  .map-summary-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
 <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
   <a href="/stats" style="color:var(--muted);font-size:.85rem;">← Stats</a>
   <h1 style="font-size:1.4rem;font-weight:700;" id="mapHeading">{{ map_name }}</h1>
@@ -39,7 +53,7 @@
 </div>
 
 <!-- ── Summary cards ── -->
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.7rem;margin-bottom:1.6rem;">
+<div class="map-summary-grid">
   <div class="card" style="text-align:center;padding:.9rem .6rem;">
     <div class="stat-big" id="m-matches">—</div>
     <div class="stat-label help-label" title="Matches played on this map in the selected period.">Matches</div>
@@ -65,12 +79,20 @@
     <div class="stat-label help-label" title="Number of matches won by Team 1 on this map.">T1 Wins</div>
   </div>
   <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" style="color:var(--muted)" id="m-draws">—</div>
+    <div class="stat-label help-label" title="Matches ending with tied round score.">Draws</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
     <div class="stat-big" style="color:var(--t2)" id="m-t2wins">—</div>
     <div class="stat-label help-label" title="Number of matches won by Team 2 on this map.">T2 Wins</div>
   </div>
   <div class="card" style="text-align:center;padding:.9rem .6rem;">
-    <div class="stat-big" style="color:var(--muted)" id="m-draws">—</div>
-    <div class="stat-label help-label" title="Matches ending with tied round score.">Draws</div>
+    <div class="stat-big" id="m-fkwinrate">—</div>
+    <div class="stat-label help-label" title="How often the team that gets the first kill in a round wins that round.">FK → Win%</div>
+  </div>
+  <div class="card" style="text-align:center;padding:.9rem .6rem;">
+    <div class="stat-big" id="m-roundsecs">—</div>
+    <div class="stat-label help-label" title="Average round duration on this map.">Avg Round</div>
   </div>
 </div>
 
@@ -154,6 +176,24 @@
   </table>
 </div>
 
+<!-- ── Weapon breakdown ── -->
+<div class="section-title" style="margin-top:2rem;">Weapon Kill Breakdown</div>
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table id="weaponTable">
+    <thead>
+      <tr>
+        <th>Weapon</th>
+        <th class="num help-label" title="Total kills with this weapon on this map.">Kills</th>
+        <th class="num help-label" title="Percentage of all kills made with this weapon.">% of Kills</th>
+        <th class="num help-label" title="Number of distinct players who got a kill with this weapon.">Killers</th>
+      </tr>
+    </thead>
+    <tbody id="weaponBody">
+      <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1.5rem;">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
 <!-- ── Spatial analytics ── -->
 <div class="section-title" style="margin-top:2rem;">Map Heatmaps &amp; Spatial Analysis</div>
 <div class="card" style="padding:.85rem;">
@@ -197,6 +237,14 @@
       Weapon
       <select id="spatialWeapon">
         <option value="">All weapons</option>
+      </select>
+    </label>
+    <label>
+      Team
+      <select id="spatialTeam">
+        <option value="0">Both teams</option>
+        <option value="1">Team 1 only</option>
+        <option value="2">Team 2 only</option>
       </select>
     </label>
     <button id="spatialRefresh" type="button">Refresh</button>
@@ -621,6 +669,7 @@ body.spatial-fs-open { overflow: hidden; }
   const _spatialScaleEl = document.getElementById('spatialScale');
   const _spatialPlayerEl = document.getElementById('spatialPlayer');
   const _spatialWeaponEl = document.getElementById('spatialWeapon');
+  const _spatialTeamEl = document.getElementById('spatialTeam');
   const _spatialRefreshEl = document.getElementById('spatialRefresh');
   const _spatialFullscreenEl = document.getElementById('spatialFullscreen');
   const _spatialCanvas = document.getElementById('spatialCanvas');
@@ -1064,11 +1113,13 @@ body.spatial-fs-open { overflow: hidden; }
     const cell = Number((_spatialCellEl && _spatialCellEl.value) || 128);
     const player = ((_spatialPlayerEl && _spatialPlayerEl.value) || '').trim();
     const weapon = ((_spatialWeaponEl && _spatialWeaponEl.value) || '').trim();
+    const team = Number((_spatialTeamEl && _spatialTeamEl.value) || 0);
 
     const qp = new URLSearchParams();
     qp.set('cell_size', String(cell));
     if (player) qp.set('player', player);
     if (weapon) qp.set('weapon', weapon);
+    if (team) qp.set('team', String(team));
 
     if (kind === 'movement') {
       qp.set('route_cell_size', String(Math.round(cell * 1.5)));
@@ -1223,6 +1274,7 @@ body.spatial-fs-open { overflow: hidden; }
   });
   if (_spatialPlayerEl) _spatialPlayerEl.addEventListener('change', loadSpatial);
   if (_spatialWeaponEl) _spatialWeaponEl.addEventListener('change', loadSpatial);
+  if (_spatialTeamEl) _spatialTeamEl.addEventListener('change', loadSpatial);
   if (_spatialFullscreenEl) _spatialFullscreenEl.addEventListener('click', _toggleSpatialFullscreen);
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && _spatialStage && _spatialStage.classList.contains('is-fullscreen')) {
@@ -1291,14 +1343,16 @@ body.spatial-fs-open { overflow: hidden; }
 
   // ── Summary ────────────────────────────────────────────────────────────────
   periodFetch(base + '/detail').then(r=>r.json()).then(d => {
-    setEl('m-matches',  fmt(d.matches));
-    setEl('m-kills',    fmt(d.total_kills));
-    setEl('m-avgkills', d.avg_kills != null ? parseFloat(d.avg_kills).toFixed(1) : '—');
-    setEl('m-players',  fmt(d.unique_players));
-    setEl('m-duration', fmtDuration(d.avg_duration_min));
-    setEl('m-t1wins',   fmt(d.t1_wins));
-    setEl('m-t2wins',   fmt(d.t2_wins));
-    setEl('m-draws',    fmt(d.draws));
+    setEl('m-matches',   fmt(d.matches));
+    setEl('m-kills',     fmt(d.total_kills));
+    setEl('m-avgkills',  d.avg_kills != null ? parseFloat(d.avg_kills).toFixed(1) : '—');
+    setEl('m-players',   fmt(d.unique_players));
+    setEl('m-duration',  fmtDuration(d.avg_duration_min));
+    setEl('m-t1wins',    fmt(d.t1_wins));
+    setEl('m-t2wins',    fmt(d.t2_wins));
+    setEl('m-draws',     fmt(d.draws));
+    setEl('m-fkwinrate', d.fk_win_rate != null ? parseFloat(d.fk_win_rate).toFixed(1) + '%' : '—');
+    setEl('m-roundsecs', d.avg_round_seconds != null ? parseFloat(d.avg_round_seconds).toFixed(1) + 's' : '—');
   }).catch(()=>{});
 
   // ── Leaderboard — sortable + paginated ────────────────────────────────────
@@ -1427,6 +1481,36 @@ body.spatial-fs-open { overflow: hidden; }
       </tr>`;
     }).join('');
   }).catch(()=>{});
+
+  // ── Weapon breakdown ──────────────────────────────────────────────────────
+  periodFetch(base + '/weapon-stats').then(r => r.ok ? r.json() : []).then(data => {
+    const tbody = document.getElementById('weaponBody');
+    if (!tbody) return;
+    if (!data || !data.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1rem;">No weapon data yet.</td></tr>';
+      return;
+    }
+    const maxKills = Math.max(data[0].kills || 1, 1);
+    tbody.innerHTML = data.map(r => {
+      const barW = Math.round(((r.kills || 0) / maxKills) * 100);
+      return `<tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:.5rem;white-space:nowrap;">
+            <div style="flex:0 0 80px;height:6px;border-radius:3px;background:var(--border);overflow:hidden;">
+              <div style="width:${barW}%;height:100%;background:var(--accent);border-radius:3px;"></div>
+            </div>
+            ${escHtml(r.weapon)}
+          </div>
+        </td>
+        <td class="num">${fmt(r.kills)}</td>
+        <td class="num">${r.pct != null ? parseFloat(r.pct).toFixed(1) + '%' : '—'}</td>
+        <td class="num">${fmt(r.killers)}</td>
+      </tr>`;
+    }).join('');
+  }).catch(() => {
+    const tbody = document.getElementById('weaponBody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--accent2);padding:1rem;">Failed to load.</td></tr>';
+  });
 
   // ── Init ───────────────────────────────────────────────────────────────────
   loadLeaderboard(1);

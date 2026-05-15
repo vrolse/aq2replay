@@ -151,12 +151,12 @@
     return '';
   }
 
-  // HS% class: ≥30% = high, <15% = low
+  // HS% class: ≥30% = high, <15% = low (returns extra class token only)
   function hsCls(v) {
     var n = parseFloat(v);
     if (isNaN(n)) return '';
-    if (n >= 30) return ' class="hs-hi"';
-    if (n < 15)  return ' class="hs-lo"';
+    if (n >= 30) return ' hs-hi';
+    if (n < 15)  return ' hs-lo';
     return '';
   }
 
@@ -201,7 +201,7 @@
         '<td><a href="' + wpUrl + '">' + S.escHtml(r.weapon || 'unknown') + '</a></td>' +
         '<td class="num">' + S.fmtNum(kills) + '</td>' +
         '<td class="num">' + (r.kill_pct != null ? r.kill_pct.toFixed(1) + '%' : '—') + '</td>' +
-        '<td class="num"' + hsCls(r.hs_pct) + '>' + pct(r.hs_pct) + '</td>' +
+        '<td class="num' + hsCls(r.hs_pct) + '">' + pct(r.hs_pct) + '</td>' +
         '<td class="num" style="' + winColor(r.win_rate) + '">' + pct(r.win_rate) + '</td>' +
         '<td class="num">' + (r.avg_kills_per_match != null ? parseFloat(r.avg_kills_per_match).toFixed(2) : '—') + '</td>' +
         '<td class="num">' + S.fmtNum(r.matches) + '</td>' +
@@ -247,7 +247,7 @@
         '<td><a href="/map/' + encodeURIComponent(r.map || '') + '">' + S.escHtml(r.map || 'unknown') + '</a></td>' +
         '<td><a href="/weapon/' + encodeURIComponent(r.weapon || '') + '">' + S.escHtml(r.weapon || 'unknown') + '</a></td>' +
         '<td class="num">' + S.fmtNum(r.kills) + '</td>' +
-        '<td class="num"' + hsCls(r.hs_pct) + '>' + pct(r.hs_pct) + '</td>' +
+        '<td class="num' + hsCls(r.hs_pct) + '">' + pct(r.hs_pct) + '</td>' +
         '<td class="num" style="' + winColor(r.win_rate) + '">' + pct(r.win_rate) + '</td>' +
       '</tr>';
     }).join('');

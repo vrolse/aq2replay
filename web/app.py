@@ -503,7 +503,11 @@ def api_replays():
         prefix = dir_filter + '/'
         filtered = [r for r in filtered if r['filename'].startswith(prefix)]
     if q:
-        filtered = [r for r in filtered if q in r['filename'].lower()]
+        player_paths = _db.get_replay_paths_by_player(q)
+        filtered = [
+            r for r in filtered
+            if q in r['filename'].lower() or r['filename'] in player_paths
+        ]
 
     total = len(filtered)
     start = (page - 1) * per_page
@@ -1235,6 +1239,8 @@ def api_map_heatmap(map_name: str):
     limit = request.args.get('limit', 2000, type=int)
     player = request.args.get('player', '', type=str)
     weapon = request.args.get('weapon', '', type=str)
+    team = request.args.get('team', 0, type=int)
+    team = team if team in (1, 2) else 0
     return jsonify(_db.get_map_heatmap(
         map_name,
         kind=kind,
@@ -1245,6 +1251,7 @@ def api_map_heatmap(map_name: str):
         player=player,
         weapon=weapon,
         limit=limit,
+        team=team,
     ))
 
 
@@ -1302,6 +1309,16 @@ def api_map_weapons(map_name: str):
             (map_name,),
         ).fetchall()
     return jsonify([r[0] for r in rows])
+
+
+@app.route('/api/map/<path:map_name>/weapon-stats')
+def api_map_weapon_stats(map_name: str):
+    return jsonify(_db.get_map_weapon_stats(
+        map_name,
+        mode=_stats_mode_arg(),
+        period=_stats_period_arg(),
+        week=_stats_week_arg(),
+    ))
 
 
 @app.route('/api/map/<path:map_name>/zone-risk')

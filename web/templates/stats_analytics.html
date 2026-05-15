@@ -37,16 +37,16 @@
 </div>
 <div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem;">
   <div class="split-list-grid">
-    <div>
-      <div class="list-caption">Who Gets First Blood</div>
+    <div class="fk-panel">
+      <div class="list-caption">🎯 Who Gets First Blood</div>
       <div id="fkTopPlayers" class="tiny-list muted-note">Loading…</div>
     </div>
-    <div>
-      <div class="list-caption">Weapons Used for First Kill</div>
+    <div class="fk-panel">
+      <div class="list-caption">🔫 Weapon at First Kill</div>
       <div id="fkTopWeapons" class="tiny-list muted-note">Loading…</div>
     </div>
-    <div>
-      <div class="list-caption">Where First Kills Happen</div>
+    <div class="fk-panel">
+      <div class="list-caption">📍 Where First Kills Happen</div>
       <div id="fkTopLocations" class="tiny-list muted-note">Loading…</div>
     </div>
   </div>
@@ -197,7 +197,7 @@
         <tr>
           <th class="help-label" title="How the round ended — e.g. by eliminating all enemies, by objective, or by time limit.">How the Round Ended</th>
           <th class="num help-label" title="Number of rounds that ended this way.">Rounds</th>
-          <th class="num help-label" title="Average round length (in seconds) for rounds that ended this way.">Avg Length (s)</th>
+          <th class="num help-label" title="Average round length for rounds that ended this way.">Avg Length</th>
         </tr>
       </thead>
       <tbody id="roundWinCondBody">
@@ -321,6 +321,70 @@
   margin-top: .27rem;
   line-height: 1.35;
 }
+.ak-stat {
+  border-left: 3px solid var(--accent);
+}
+.wc-badge {
+  display: inline-block;
+  padding: .13rem .42rem;
+  border-radius: 3px;
+  font-size: .78rem;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.wc-badge-kill  { border-color: var(--green); color: var(--green); background: transparent; }
+.wc-badge-timeout { border-color: var(--accent); color: var(--accent); background: transparent; }
+/* ── First-blood ranked lists ─────────────────────────────── */
+.fk-panel { border-top: 2px solid var(--accent); padding-top: .3rem; }
+.fk-row {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .2rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.fk-row:last-child { border-bottom: none; }
+.fk-rank {
+  font-size: .78rem;
+  width: 1.5rem;
+  text-align: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.fk-rank-n { color: var(--muted); font-size: .7rem; font-variant-numeric: tabular-nums; }
+.fk-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .82rem;
+}
+.fk-bar-wrap {
+  width: 44px;
+  height: 5px;
+  background: var(--border);
+  border-radius: 2px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.fk-bar {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  opacity: .65;
+  border-radius: 2px;
+}
+.fk-val {
+  font-size: .82rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 1.8rem;
+  text-align: right;
+  flex-shrink: 0;
+  color: var(--text);
+}
 .ak-caption-row {
   display: flex;
   gap: 1.6rem;
@@ -392,6 +456,24 @@
   function tinyRow(label, value) {
     return '<div class="tiny-row"><span>' + S.escHtml(String(label)) + '</span><strong>' + S.fmtNum(value) + '</strong></div>';
   }
+  function winCondLabel(raw) {
+    var map = {
+      'last_kill':      'Last Kill',
+      'timeout_or_tie': 'Timeout / Tie',
+      'capture':        'Capture',
+      'objective':      'Objective',
+      'elimination':    'Elimination',
+      'time_limit':     'Time Limit',
+      'tie':            'Tie'
+    };
+    if (map[raw]) return map[raw];
+    return raw ? raw.replace(/_/g, ' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); }) : 'Unknown';
+  }
+  function wcBadgeClass(raw) {
+    if (raw === 'last_kill' || raw === 'elimination') return 'wc-badge-kill';
+    if (raw === 'timeout_or_tie' || raw === 'tie' || raw === 'time_limit') return 'wc-badge-timeout';
+    return '';
+  }
 
   // ── First-kill dashboard ──────────────────────────────────
   S.fetchJson('/api/stats/first-kill?limit=12', filters).then(function (d) {
@@ -410,8 +492,21 @@
       var el = document.getElementById(elId);
       if (!el) return;
       if (!rows || !rows.length) { el.innerHTML = '<span class="muted-note">No data.</span>'; return; }
-      el.innerHTML = rows.map(function (r) {
-        return tinyRow(r[labelKey] != null ? r[labelKey] : 'unknown', r[valKey]);
+      var maxVal = rows.reduce(function(m, r){ return Math.max(m, parseFloat(r[valKey]) || 0); }, 0);
+      var medals = ['\uD83E\uDD47','\uD83E\uDD48','\uD83E\uDD49'];
+      el.innerHTML = rows.map(function (r, i) {
+        var label = r[labelKey] != null ? r[labelKey] : 'unknown';
+        var val   = parseFloat(r[valKey]) || 0;
+        var barW  = maxVal > 0 ? Math.round((val / maxVal) * 100) : 0;
+        var rankHtml = i < 3
+          ? '<span class="fk-rank">' + medals[i] + '</span>'
+          : '<span class="fk-rank fk-rank-n">' + (i + 1) + '</span>';
+        return '<div class="fk-row">' +
+          rankHtml +
+          '<span class="fk-label">' + S.escHtml(String(label)) + '</span>' +
+          '<span class="fk-bar-wrap"><span class="fk-bar" style="width:' + barW + '%"></span></span>' +
+          '<strong class="fk-val">' + S.fmtNum(val) + '</strong>' +
+        '</div>';
       }).join('');
     }
     fillList('fkTopPlayers',   d.top_players   || [], 'name',     'first_kills');
@@ -524,11 +619,18 @@
     if (!condRows.length) {
       condBody.innerHTML = '<tr><td colspan="3" class="center muted-row">No win-condition data yet.</td></tr>';
     } else {
+      var maxCondRounds = Math.max.apply(null, condRows.map(function(r){ return r.rounds || 0; }));
       condBody.innerHTML = condRows.map(function (r) {
+        var label = winCondLabel(r.win_condition);
+        var cls   = wcBadgeClass(r.win_condition);
+        var barW  = maxCondRounds > 0 ? Math.round((r.rounds / maxCondRounds) * 60) : 0;
         return '<tr>' +
-          '<td>' + S.escHtml(r.win_condition || 'unknown') + '</td>' +
-          '<td class="num">' + S.fmtNum(r.rounds) + '</td>' +
-          '<td class="num">' + (r.avg_round_seconds != null ? parseFloat(r.avg_round_seconds).toFixed(2) : '—') + '</td>' +
+          '<td><span class="wc-badge ' + cls + '">' + S.escHtml(label) + '</span></td>' +
+          '<td class="num"><div style="display:flex;align-items:center;gap:.35rem;justify-content:flex-end;">' +
+            '<div style="background:var(--accent);opacity:.4;height:7px;border-radius:2px;width:' + barW + 'px;min-width:' + (r.rounds > 0 ? 2 : 0) + 'px;"></div>' +
+            S.fmtNum(r.rounds) +
+          '</div></td>' +
+          '<td class="num">' + secs(r.avg_round_seconds) + '</td>' +
         '</tr>';
       }).join('');
     }
@@ -539,8 +641,13 @@
       fkBody.innerHTML = '<tr><td colspan="3" class="center muted-row">No first-kill outcome data yet.</td></tr>';
     } else {
       fkBody.innerHTML = fkRows.map(function (r) {
+        var side = String(r.first_kill_side || '');
+        var teamNum = (side === 't1' || side === 'T1' || side === '1') ? 1
+                    : (side === 't2' || side === 'T2' || side === '2') ? 2 : 0;
+        var label = teamNum ? 'Team ' + teamNum : side.toUpperCase() || 'Unknown';
+        var colorStyle = teamNum ? 'color:' + teamColor(teamNum) + ';font-weight:700' : '';
         return '<tr>' +
-          '<td>' + S.escHtml(String(r.first_kill_side || 'unknown').toUpperCase()) + '</td>' +
+          '<td style="' + colorStyle + '">' + S.escHtml(label) + '</td>' +
           '<td class="num">' + S.fmtNum(r.rounds) + '</td>' +
           '<td class="num" style="' + winColor(r.conversion_rate) + '">' + pct(r.conversion_rate, 1) + '</td>' +
         '</tr>';

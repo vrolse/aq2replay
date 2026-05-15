@@ -1078,6 +1078,10 @@ class LiveGameState:
                            cmd, extra, msg._p - 1, len(block_bytes))
                 break
 
+            except (struct.error, IndexError):
+                _log.debug('LiveGameState: buffer underrun at offset %d/%d (truncated packet)',
+                           msg._p, len(block_bytes))
+                break
             except Exception:
                 _log.exception('LiveGameState: parse error at offset %d/%d',
                                msg._p, len(block_bytes))

@@ -1305,46 +1305,62 @@ def _rebuild_map_stats_agg(conn: sqlite3.Connection) -> None:
             JOIN matches m2 ON m2.id = p2.match_id
             WHERE m2.game_mode_detail = ?
             GROUP BY m2.map, p2.name
+        ),
+        match_agg AS (
+            SELECT map,
+                   COUNT(*)                                                AS matches,
+                   SUM(total_kills)                                        AS kills,
+                   ROUND(CAST(SUM(total_kills) AS REAL) / COUNT(*), 1)    AS avg_kills,
+                   ROUND(AVG(duration) / 60.0, 1)                         AS avg_duration_min
+            FROM matches
+            WHERE map != '' AND game_mode_detail = ?
+            GROUP BY map
+        ),
+        player_agg AS (
+            SELECT m.map, COUNT(DISTINCT p.name) AS players
+            FROM matches m
+            LEFT JOIN player_match_stats p ON p.match_id = m.id
+            WHERE m.map != '' AND m.game_mode_detail = ?
+            GROUP BY m.map
         )
         INSERT INTO map_stats_agg (
             map, matches, kills, avg_kills, players, avg_duration_min, top_killer
         )
-        SELECT
-            m.map,
-            COUNT(DISTINCT m.id)        AS matches,
-            SUM(m.total_kills)          AS kills,
-            ROUND(CAST(SUM(m.total_kills) AS REAL) / COUNT(DISTINCT m.id), 1) AS avg_kills,
-            COUNT(DISTINCT p.name)      AS players,
-            ROUND(AVG(m.duration)/60,1) AS avg_duration_min,
-            mt.name                     AS top_killer
-        FROM matches m
-        LEFT JOIN player_match_stats p ON p.match_id = m.id
-        LEFT JOIN map_top mt ON mt.map = m.map AND mt.rn = 1
-        WHERE m.map != '' AND m.game_mode_detail = ?
-        GROUP BY m.map
-    ''', (_DEFAULT_STATS_MODE, _DEFAULT_STATS_MODE))
+        SELECT ma.map, ma.matches, ma.kills, ma.avg_kills,
+               pa.players, ma.avg_duration_min, mt.name
+        FROM match_agg ma
+        LEFT JOIN player_agg pa ON pa.map = ma.map
+        LEFT JOIN map_top mt ON mt.map = ma.map AND mt.rn = 1
+    ''', (_DEFAULT_STATS_MODE, _DEFAULT_STATS_MODE, _DEFAULT_STATS_MODE))
 
 
 def _rebuild_summary_agg(conn: sqlite3.Connection) -> None:
     """Recompute one-row summary aggregate."""
     conn.execute('DELETE FROM summary_agg')
     conn.execute('''
+        WITH mt AS (
+            SELECT COUNT(*)              AS total_matches,
+                   SUM(total_kills)      AS total_kills,
+                   COUNT(DISTINCT map)   AS total_maps
+            FROM matches
+            WHERE game_mode_detail = ?
+        ),
+        pt AS (
+            SELECT COUNT(DISTINCT p.name) AS total_players,
+                   SUM(p.damage)           AS total_damage,
+                   MAX(p.kills)            AS best_game_kills
+            FROM player_match_stats p
+            JOIN matches m ON m.id = p.match_id
+            WHERE m.game_mode_detail = ?
+        )
         INSERT INTO summary_agg (
             id, total_matches, total_players, total_kills,
             total_damage, best_game_kills, total_maps
         )
-        SELECT
-            1 AS id,
-            COUNT(DISTINCT m.id)    AS total_matches,
-            COUNT(DISTINCT p.name)  AS total_players,
-            SUM(m.total_kills)      AS total_kills,
-            SUM(p.damage)           AS total_damage,
-            MAX(p.kills)            AS best_game_kills,
-            COUNT(DISTINCT m.map)   AS total_maps
-        FROM matches m
-        LEFT JOIN player_match_stats p ON p.match_id = m.id
-        WHERE m.game_mode_detail = ?
-    ''', (_DEFAULT_STATS_MODE,))
+        SELECT 1, mt.total_matches, pt.total_players, mt.total_kills,
+               pt.total_damage, pt.best_game_kills, mt.total_maps
+        FROM mt, pt
+    ''', (_DEFAULT_STATS_MODE, _DEFAULT_STATS_MODE))
 
 
 def _rebuild_records_agg(conn: sqlite3.Connection) -> None:
@@ -1650,7 +1666,7 @@ def _write_parsed(conn: sqlite3.Connection, relpath: str, mtime: float, data: di
              data.get('map', ''),
              played_at,
              float(data.get('duration', 0) or 0),
-                         len(raw_kills),
+             sum(1 for k in raw_kills if not k.get('team_kill') and not k.get('suicide')),
              t1r, t2r,
              mtime,
                game_mode,
@@ -2617,11 +2633,18 @@ def get_map_stats(mode: str = _DEFAULT_STATS_MODE,
                     WHERE mr.game_mode_detail = 'teamplay'
                     GROUP BY mr.map
                 )
+                last_played_cte AS (
+                    SELECT map, MAX(played_at) AS last_played
+                    FROM matches
+                    WHERE game_mode_detail = 'teamplay'
+                    GROUP BY map
+                )
                 SELECT a.map, a.matches, a.kills, a.avg_kills, a.players,
                        a.avg_duration_min, a.top_killer,
-                       rs.avg_round_seconds, rs.fk_win_rate
+                       rs.avg_round_seconds, rs.fk_win_rate, lp.last_played
                 FROM map_stats_agg a
                 LEFT JOIN round_stats rs ON rs.map = a.map
+                LEFT JOIN last_played_cte lp ON lp.map = a.map
                 ORDER BY a.matches DESC
             ''').fetchall()
         else:
@@ -2672,26 +2695,44 @@ def get_map_stats(mode: str = _DEFAULT_STATS_MODE,
                     JOIN matches mr ON mr.id = r.match_id
                     WHERE {mode_clause_mr} AND {period_clause_mr} AND {week_clause_mr}
                     GROUP BY mr.map
+                ),
+                match_agg AS (
+                    SELECT m.map,
+                           COUNT(*)                                                    AS matches,
+                           SUM(m.total_kills)                                          AS kills,
+                           ROUND(CAST(SUM(m.total_kills) AS REAL) / COUNT(*), 1)      AS avg_kills,
+                           ROUND(AVG(m.duration) / 60, 1)                             AS avg_duration_min,
+                           MAX(m.played_at)                                            AS last_played
+                    FROM matches m
+                    WHERE m.map != '' AND {mode_clause} AND {period_clause} AND {week_clause}
+                    GROUP BY m.map
+                ),
+                player_agg AS (
+                    SELECT m.map, COUNT(DISTINCT p.name) AS players
+                    FROM matches m
+                    LEFT JOIN player_match_stats p ON p.match_id = m.id
+                    WHERE m.map != '' AND {mode_clause} AND {period_clause} AND {week_clause}
+                    GROUP BY m.map
                 )
                 SELECT
-                    m.map,
-                    COUNT(DISTINCT m.id)        AS matches,
-                    SUM(m.total_kills)          AS kills,
-                    ROUND(CAST(SUM(m.total_kills) AS REAL) / COUNT(DISTINCT m.id), 1) AS avg_kills,
-                    COUNT(DISTINCT p.name)      AS players,
-                    ROUND(AVG(m.duration)/60,1) AS avg_duration_min,
-                    mt.name                     AS top_killer,
+                    ma.map,
+                    ma.matches,
+                    ma.kills,
+                    ma.avg_kills,
+                    pa.players,
+                    ma.avg_duration_min,
+                    mt.name          AS top_killer,
                     rs.avg_round_seconds,
-                    rs.fk_win_rate
-                FROM matches m
-                LEFT JOIN player_match_stats p ON p.match_id = m.id
-                LEFT JOIN map_top mt ON mt.map = m.map AND mt.rn = 1
-                LEFT JOIN round_stats rs ON rs.map = m.map
-                WHERE m.map != '' AND {mode_clause} AND {period_clause} AND {week_clause}
-                GROUP BY m.map
-                ORDER BY matches DESC
+                    rs.fk_win_rate,
+                    ma.last_played
+                FROM match_agg ma
+                LEFT JOIN player_agg pa ON pa.map = ma.map
+                LEFT JOIN map_top mt ON mt.map = ma.map AND mt.rn = 1
+                LEFT JOIN round_stats rs ON rs.map = ma.map
+                ORDER BY ma.matches DESC
             ''', mode_params + period_params_m2 + week_params_m2
                 + mode_params_mr + period_params_mr + week_params_mr
+                + mode_params + period_params + week_params
                 + mode_params + period_params + week_params).fetchall()
     result = [dict(r) for r in rows]
     _cache_set(cache_key, result)
@@ -2724,17 +2765,26 @@ def get_summary(mode: str = _DEFAULT_STATS_MODE,
         else:
             mode_clause, mode_params = _mode_filter_clause(mode)
             r = conn.execute(f'''
-                SELECT
-                    COUNT(DISTINCT m.id)    AS total_matches,
-                    COUNT(DISTINCT p.name)  AS total_players,
-                    SUM(m.total_kills)      AS total_kills,
-                    SUM(p.damage)           AS total_damage,
-                    MAX(p.kills)            AS best_game_kills,
-                    COUNT(DISTINCT m.map)   AS total_maps
-                FROM matches m
-                LEFT JOIN player_match_stats p ON p.match_id = m.id
-                WHERE {mode_clause} AND {period_clause} AND {week_clause}
-            ''', mode_params + period_params + week_params).fetchone()
+                WITH mt AS (
+                    SELECT COUNT(*)              AS total_matches,
+                           SUM(total_kills)      AS total_kills,
+                           COUNT(DISTINCT map)   AS total_maps
+                    FROM matches m
+                    WHERE {mode_clause} AND {period_clause} AND {week_clause}
+                ),
+                pt AS (
+                    SELECT COUNT(DISTINCT p.name) AS total_players,
+                           SUM(p.damage)           AS total_damage,
+                           MAX(p.kills)            AS best_game_kills
+                    FROM player_match_stats p
+                    JOIN matches m ON m.id = p.match_id
+                    WHERE {mode_clause} AND {period_clause} AND {week_clause}
+                )
+                SELECT mt.total_matches, pt.total_players, mt.total_kills,
+                       pt.total_damage, pt.best_game_kills, mt.total_maps
+                FROM mt, pt
+            ''', mode_params + period_params + week_params
+                + mode_params + period_params + week_params).fetchone()
     result = dict(r) if r else {}
     _cache_set(cache_key, result)
     return result
@@ -4593,21 +4643,48 @@ def get_map_detail(map_name: str,
     period_clause, period_params, _ = _h2h_period_filter_clause(period)
     with _connect() as conn:
         r = conn.execute(f'''
+            WITH mt AS (
+                SELECT COUNT(*)                                                        AS matches,
+                       SUM(total_kills)                                                AS total_kills,
+                       ROUND(CAST(SUM(total_kills) AS REAL) / COUNT(*), 1)             AS avg_kills,
+                       ROUND(AVG(duration) / 60.0, 1)                                  AS avg_duration_min,
+                       COUNT(DISTINCT CASE WHEN t1_rounds > t2_rounds THEN id END)     AS t1_wins,
+                       COUNT(DISTINCT CASE WHEN t2_rounds > t1_rounds THEN id END)     AS t2_wins,
+                       COUNT(DISTINCT CASE WHEN t1_rounds = t2_rounds
+                                            AND (t1_rounds + t2_rounds) > 0
+                                            THEN id END)                               AS draws
+                FROM matches m
+                WHERE m.map = ? AND m.game_mode = 'tdm' AND {period_clause}
+            ),
+            pt AS (
+                SELECT COUNT(DISTINCT p.name) AS unique_players
+                FROM player_match_stats p
+                JOIN matches m ON m.id = p.match_id
+                WHERE m.map = ? AND m.game_mode = 'tdm' AND {period_clause}
+            )
+            SELECT mt.matches, mt.total_kills, mt.avg_kills, pt.unique_players,
+                   mt.avg_duration_min, mt.t1_wins, mt.t2_wins, mt.draws
+            FROM mt, pt
+        ''', (map_name,) + period_params + (map_name,) + period_params).fetchone()
+        rs = conn.execute(f'''
             SELECT
-                COUNT(DISTINCT m.id)                                              AS matches,
-                SUM(m.total_kills)                                                AS total_kills,
-                ROUND(CAST(SUM(m.total_kills) AS REAL) / COUNT(DISTINCT m.id), 1) AS avg_kills,
-                COUNT(DISTINCT p.name)                                            AS unique_players,
-                ROUND(AVG(m.duration) / 60.0, 1)                                  AS avg_duration_min,
-                SUM(CASE WHEN m.t1_rounds > m.t2_rounds THEN 1 ELSE 0 END)        AS t1_wins,
-                SUM(CASE WHEN m.t2_rounds > m.t1_rounds THEN 1 ELSE 0 END)        AS t2_wins,
-                SUM(CASE WHEN m.t1_rounds = m.t2_rounds
-                          AND (m.t1_rounds + m.t2_rounds) > 0 THEN 1 ELSE 0 END)  AS draws
-            FROM matches m
-            LEFT JOIN player_match_stats p ON p.match_id = m.id
+                ROUND(AVG(r.duration_seconds), 1) AS avg_round_seconds,
+                ROUND(100.0 * SUM(CASE WHEN r.first_kill_team > 0
+                                       AND r.first_kill_team = r.winner_team
+                                       AND r.is_tie = 0 THEN 1 ELSE 0 END)
+                           / MAX(SUM(CASE WHEN r.first_kill_team > 0
+                                         AND r.winner_team > 0
+                                         AND r.is_tie = 0 THEN 1 ELSE 0 END), 1),
+                     1) AS fk_win_rate
+            FROM rounds r
+            JOIN matches m ON m.id = r.match_id
             WHERE m.map = ? AND m.game_mode = 'tdm' AND {period_clause}
         ''', (map_name,) + period_params).fetchone()
-    return dict(r) if r else {}
+    result = dict(r) if r else {}
+    if rs:
+        result['avg_round_seconds'] = rs['avg_round_seconds']
+        result['fk_win_rate'] = rs['fk_win_rate']
+    return result
 
 
 def get_map_leaderboard(map_name: str,
@@ -4657,6 +4734,32 @@ def get_map_recent_matches(map_name: str,
             ORDER BY m.played_at DESC
             LIMIT ?
         ''', (map_name,) + period_params + (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_map_weapon_stats(map_name: str,
+                          mode: str = _DEFAULT_STATS_MODE,
+                          period: str = _DEFAULT_H2H_PERIOD,
+                          week: Optional[str] = None) -> list:
+    """Kill count breakdown by weapon for a single map."""
+    mode = _normalize_mode_filter(mode)
+    period_clause, period_params, _ = _h2h_period_filter_clause(period)
+    week_clause, week_params, _ = _week_filter_clause(week)
+    mode_clause, mode_params = _mode_filter_clause(mode)
+    with _connect() as conn:
+        rows = conn.execute(f'''
+            SELECT ke.weapon,
+                   COUNT(*)                  AS kills,
+                   COUNT(DISTINCT ke.killer) AS killers,
+                   ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct
+            FROM kill_events ke
+            JOIN matches m ON m.id = ke.match_id
+            WHERE m.map = ? AND ke.team_kill = 0
+              AND ke.weapon NOT IN ('', 'unknown')
+              AND {mode_clause} AND {period_clause} AND {week_clause}
+            GROUP BY ke.weapon
+            ORDER BY kills DESC
+        ''', (map_name,) + mode_params + period_params + week_params).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -4729,7 +4832,8 @@ def get_map_heatmap(map_name: str,
                     cell_size: float = 128.0,
                     player: Optional[str] = None,
                     weapon: Optional[str] = None,
-                    limit: int = 2000) -> dict:
+                    limit: int = 2000,
+                    team: int = 0) -> dict:
     """Spatial kill/death/first-kill heatmap cells for a map."""
     normalized_kind = str(kind or 'kills').strip().lower().replace('-', '_')
     if normalized_kind not in ('kills', 'deaths', 'first_kills'):
@@ -4738,6 +4842,7 @@ def get_map_heatmap(map_name: str,
     normalized_limit = max(1, min(int(limit), 10000))
     player_filter = (player or '').strip()
     weapon_filter = (weapon or '').strip()
+    team_filter = int(team) if int(team or 0) in (1, 2) else 0
     mode = _normalize_mode_filter(mode)
 
     period_clause, period_params, normalized_period = _h2h_period_filter_clause(
@@ -4752,7 +4857,7 @@ def get_map_heatmap(map_name: str,
     cache_key = (
         f'map_heat:{map_name.lower()}:{normalized_kind}:{mode}:{normalized_period}:'
         f'{normalized_week or "all_weeks"}:{normalized_cell:.1f}:{player_filter or "all"}:'
-        f'{weapon_filter or "all"}:{normalized_limit}'
+        f'{weapon_filter or "all"}:{normalized_limit}:{team_filter or "all"}'
     )
     cached = _cache_get(cache_key)
     if cached is not None:
@@ -4797,12 +4902,25 @@ def get_map_heatmap(map_name: str,
         if extra_filters:
             extra_filter_sql = ' AND ' + ' AND '.join(extra_filters)
 
+        team_join = ''
+        team_filter_sql = ''
+        team_params: tuple = ()
+        if team_filter:
+            team_col = 'kp.victim' if normalized_kind == 'deaths' else 'kp.killer'
+            team_join = (
+                f'JOIN player_match_stats pms_team'
+                f' ON pms_team.match_id = kp.match_id AND pms_team.name = {team_col}'
+            )
+            team_filter_sql = ' AND pms_team.team = ?'
+            team_params = (team_filter,)
+
         rows = conn.execute(f'''
             SELECT {x_col} AS x,
                    {y_col} AS y
             FROM kill_positions kp
             JOIN matches m ON m.id = kp.match_id
             {extra_join}
+            {team_join}
             WHERE m.map = ?
               AND kp.team_kill = 0
               AND {x_col} IS NOT NULL
@@ -4812,8 +4930,9 @@ def get_map_heatmap(map_name: str,
               AND {week_clause}
               {first_kill_clause}
               {extra_filter_sql}
+              {team_filter_sql}
             LIMIT 250000
-        ''', (map_name,) + mode_params + period_params + week_params + extra_params).fetchall()
+        ''', (map_name,) + mode_params + period_params + week_params + extra_params + team_params).fetchall()
 
     points = [(float(r['x']), float(r['y'])) for r in rows if r['x'] is not None and r['y'] is not None]
     packed = _build_spatial_cells(points, normalized_cell, normalized_limit)
@@ -4827,6 +4946,7 @@ def get_map_heatmap(map_name: str,
         'cell_size': normalized_cell,
         'player': player_filter or None,
         'weapon': weapon_filter or None,
+        'team': team_filter or None,
         **packed,
     }
     _cache_set(cache_key, result)
@@ -6890,6 +7010,20 @@ def get_h2h(p1: str, p2: str, period: str = _DEFAULT_H2H_PERIOD) -> dict:
 
 
 # ── Player name search ─────────────────────────────────────────────────────────
+
+def get_replay_paths_by_player(q: str) -> set:
+    """Return a set of match paths (relative filenames) where any player's name
+    contains q (case-insensitive).  Used to make the replay-list search work by
+    player name, not just filename."""
+    with _connect() as conn:
+        rows = conn.execute(
+            'SELECT DISTINCT m.path FROM matches m '
+            'JOIN player_match_stats p ON p.match_id = m.id '
+            'WHERE LOWER(p.name) LIKE ?',
+            (f'%{q.lower()}%',)
+        ).fetchall()
+    return {row[0] for row in rows}
+
 
 def search_players(q: str, limit: int = 20) -> list:
     """Case-insensitive contains-match on player names."""

@@ -31,20 +31,21 @@
         <tr>
           <th class="sortable help-label" data-sort="map" title="Map name.">Map</th>
           <th class="num sortable help-label" data-sort="matches" title="Total matches played on this map.">Matches</th>
+          <th class="num sortable help-label" data-sort="players" title="Distinct players seen on this map.">Players</th>
+          <th class="num sortable help-label" data-sort="t1_wins" title="Matches won by Team 1." style="color:var(--t1)">T1 W</th>
+          <th class="num sortable help-label" data-sort="draws" title="Matches ending tied." style="color:var(--muted)">Draws</th>
+          <th class="num sortable help-label" data-sort="t2_wins" title="Matches won by Team 2." style="color:var(--t2)">T2 W</th>
+          <th class="num sortable help-label" data-sort="balance_score" title="How fairly teams split wins on this map. Green = even (both teams win roughly equally). Yellow = one team has a slight edge. Red = one team dominates.">Fairness</th>
           <th class="num sortable help-label" data-sort="kills" title="Total recorded kills on this map.">Total Kills</th>
           <th class="num sortable help-label" data-sort="avg_kills" title="Average total kills per match on this map.">Avg K/Match</th>
-          <th class="num sortable help-label" data-sort="players" title="Distinct players seen on this map.">Players</th>
-          <th class="num sortable help-label" data-sort="avg_duration_min" title="Average match duration.">Avg Duration</th>
           <th class="num sortable help-label" data-sort="avg_round_seconds" title="Average round duration in seconds across all rounds played on this map.">Avg Round</th>
           <th class="num sortable help-label" data-sort="fk_win_rate" title="How often the team that gets the first kill in a round also wins that round. Above 70% means controlling first contact is critical on this map.">FK → Win%</th>
-          <th class="num sortable help-label" data-sort="balance_score" title="How fairly teams split wins on this map. Green = even (both teams win roughly equally). Yellow = one team has a slight edge. Red = one team dominates.">Fairness</th>
-          <th class="num sortable help-label" data-sort="t1_wins" title="Matches won by Team 1." style="color:var(--t1)">T1 W</th>
-          <th class="num sortable help-label" data-sort="t2_wins" title="Matches won by Team 2." style="color:var(--t2)">T2 W</th>
-          <th class="num sortable help-label" data-sort="draws" title="Matches ending tied." style="color:var(--muted)">Draws</th>
+          <th class="sortable help-label" data-sort="top_killer" title="Player with most total kills on this map.">Top Killer</th>
+          <th class="num sortable help-label" data-sort="last_played" title="Date this map was last played.">Last Played</th>
         </tr>
       </thead>
       <tbody id="mapsTableBody">
-        <tr><td colspan="12" class="center muted-row">Loading…</td></tr>
+        <tr><td colspan="13" class="center muted-row">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -143,7 +144,7 @@
     });
 
     if (!_data.length) {
-      body.innerHTML = '<tr><td colspan="12" class="center muted-row">No map data found.</td></tr>';
+      body.innerHTML = '<tr><td colspan="13" class="center muted-row">No map data found.</td></tr>';
       renderPager();
       return;
     }
@@ -195,16 +196,17 @@
           '<a href="' + mapUrl + '">' + S.escHtml(r.map || 'unknown') + '</a>' +
         '</td>' +
         '<td class="num">' + S.fmtNum(r.matches) + '</td>' +
+        '<td class="num">' + S.fmtNum(r.players) + '</td>' +
+        '<td class="num" style="color:var(--t1)">' + (w.t1_wins != null ? w.t1_wins : '—') + '</td>' +
+        '<td class="num" style="color:var(--muted)">' + (w.draws != null ? w.draws : '—') + '</td>' +
+        '<td class="num" style="color:var(--t2)">' + (w.t2_wins != null ? w.t2_wins : '—') + '</td>' +
+        '<td class="num" style="color:' + balCol + ';font-weight:600;">' + balTxt + '</td>' +
         '<td class="num">' + S.fmtNum(r.kills) + '</td>' +
         '<td class="num">' + S.fmtNum(r.avg_kills, 1) + '</td>' +
-        '<td class="num">' + S.fmtNum(r.players) + '</td>' +
-        '<td class="num">' + (r.avg_duration_min != null ? Math.round(r.avg_duration_min) + ' min' : '—') + '</td>' +
         '<td class="num" style="color:' + roundCol + ';font-weight:600;">' + roundTxt + '</td>' +
         '<td class="num">' + (r.fk_win_rate != null ? parseFloat(r.fk_win_rate).toFixed(1) + '%' : '—') + '</td>' +
-        '<td class="num" style="color:' + balCol + ';font-weight:600;">' + balTxt + '</td>' +
-        '<td class="num" style="color:var(--t1)">' + (w.t1_wins != null ? w.t1_wins : '—') + '</td>' +
-        '<td class="num" style="color:var(--t2)">' + (w.t2_wins != null ? w.t2_wins : '—') + '</td>' +
-        '<td class="num" style="color:var(--muted)">' + (w.draws != null ? w.draws : '—') + '</td>' +
+        '<td>' + (r.top_killer ? '<a href="/player/' + encodeURIComponent(r.top_killer) + '">' + S.escHtml(r.top_killer) + '</a>' : '\u2014') + '</td>' +
+        '<td class="num">' + (r.last_played ? new Date(r.last_played * 1000).toLocaleDateString(undefined, {year:'numeric',month:'short',day:'numeric'}) : '\u2014') + '</td>' +
       '</tr>';
     }).join('');
     renderPager();
@@ -250,7 +252,7 @@
     _rawData.forEach(computeBalance);
     render();
   }).catch(function () {
-    body.innerHTML = '<tr><td colspan="12" class="center muted-row">Failed to load map stats.</td></tr>';
+    body.innerHTML = '<tr><td colspan="13" class="center muted-row">Failed to load map stats.</td></tr>';
   });
 })();
 </script>
